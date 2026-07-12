@@ -1,0 +1,22 @@
+from __future__ import annotations
+
+import logging
+
+from fastapi import FastAPI
+
+from src.utils.logger import get_logger
+
+_LOG = get_logger(__name__, level=logging.INFO)
+
+VERSION = "0.1.0"
+
+app = FastAPI(
+    title="CAPT",
+    version=VERSION,
+)
+
+
+@app.get("/api/health")
+async def health() -> dict:
+    """Liveness check."""
+    return {"status": "ok", "version": VERSION}

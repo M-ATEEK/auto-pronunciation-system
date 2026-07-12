@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv312/
+.venv/
+venv/
+
+models/*.pkl
+
+data/*.webm
+data/*.wav
+data/librispeech/
+
+frontend/node_modules/
+frontend/dist/
+
+.DS_Store
+.idea/
+.vscode/
+
+README.md

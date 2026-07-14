@@ -10,5 +10,13 @@ soundfile==0.14.*
 pronouncing==0.2.*
 setuptools<81
 
+# Audio features — librosa is the primary MFCC/F0 engine.
+librosa==0.11.0
+numba==0.60.0
+llvmlite==0.43.0
+
 torch==2.2.2
 transformers==4.41.2
+
+# Testing
+pytest>=8.0

@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, File, Query, UploadFile
 
 from src.data.aligner import phones_for_text
+from src.features.extractor import SAMPLE_RATE, extract_features
+from src.utils.audio_io import decode_audio
 from src.utils.logger import get_logger
 
 _LOG = get_logger(__name__, level=logging.INFO)
@@ -27,3 +29,19 @@ async def health() -> dict:
 async def phones(text: str = Query(..., description="Text to convert to ARPABET phones")) -> dict:
     """Return the ARPABET phone sequence for the given text (CMU dictionary)."""
     return {"text": text, "phones": phones_for_text(text)}
+
+
+_FEATURE_LABELS = [f"mfcc{i}" for i in range(13)] + ["f0", "rms", "speech_rate", "pause_ratio"]
+
+
+@app.post("/api/features")
+async def features(audio: UploadFile = File(...)) -> dict:
+    """Extracting the 17 dimensional acoustic feature vector from an uploaded clip."""
+    raw = await audio.read()
+    waveform = decode_audio(raw)
+    vector = extract_features(waveform, sr=SAMPLE_RATE)
+    return {
+        "duration_s": round(len(waveform) / SAMPLE_RATE, 3),
+        "feature_dim": int(len(vector)),
+        "features": {name: round(float(v), 4) for name, v in zip(_FEATURE_LABELS, vector)},
+    }

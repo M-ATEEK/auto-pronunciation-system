@@ -4,8 +4,9 @@ import logging
 import os
 from functools import lru_cache
 
-from fastapi import FastAPI, File, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 
+from src.classification.baseline_detector import BaselineDetector
 from src.data.aligner import phones_for_text
 from src.data.librispeech import corpus_stats
 from src.features.extractor import SAMPLE_RATE, extract_features
@@ -17,6 +18,7 @@ _LOG = get_logger(__name__, level=logging.INFO)
 VERSION = "0.1.0"
 
 _CORPUS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "librispeech")
+_BASELINE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "models", "baseline_rf.pkl")
 
 app = FastAPI(
     title="CAPT",
@@ -60,3 +62,34 @@ def _cached_corpus_stats() -> dict:
 @app.get("/api/data/stats")
 async def data_stats() -> dict:
     return _cached_corpus_stats()
+
+
+@lru_cache(maxsize=1)
+def _cached_baseline_detector() -> BaselineDetector:
+    if not os.path.exists(_BASELINE_MODEL_PATH):
+        raise HTTPException(
+            status_code=503,
+            detail="Baseline model not trained yet  run scripts/train_baseline.py first.",
+        )
+    return BaselineDetector.load(_BASELINE_MODEL_PATH)
+
+
+@app.post("/api/analyze")
+async def analyze(audio: UploadFile = File(...), transcript: str = Form(...)) -> dict:
+    """Classical (Random Forest) per-phone mispronunciation."""
+    detector = _cached_baseline_detector()
+    raw = await audio.read()
+    waveform = decode_audio(raw)
+    results = detector.detect(waveform, transcript, sr=SAMPLE_RATE)
+    return {
+        "transcript": transcript,
+        "phones": [
+            {
+                "phone": r.phone,
+                "word": r.word,
+                "prob_mispronounced": r.prob_mispronounced,
+                "is_mispronounced": r.is_mispronounced,
+            }
+            for r in results
+        ],
+    }

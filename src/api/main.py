@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import logging
+import os
+from functools import lru_cache
 
 from fastapi import FastAPI, File, Query, UploadFile
 
 from src.data.aligner import phones_for_text
+from src.data.librispeech import corpus_stats
 from src.features.extractor import SAMPLE_RATE, extract_features
 from src.utils.audio_io import decode_audio
 from src.utils.logger import get_logger
@@ -12,6 +15,8 @@ from src.utils.logger import get_logger
 _LOG = get_logger(__name__, level=logging.INFO)
 
 VERSION = "0.1.0"
+
+_CORPUS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "librispeech")
 
 app = FastAPI(
     title="CAPT",
@@ -45,3 +50,13 @@ async def features(audio: UploadFile = File(...)) -> dict:
         "feature_dim": int(len(vector)),
         "features": {name: round(float(v), 4) for name, v in zip(_FEATURE_LABELS, vector)},
     }
+
+
+@lru_cache(maxsize=1)
+def _cached_corpus_stats() -> dict:
+    return corpus_stats(_CORPUS_DIR)
+
+
+@app.get("/api/data/stats")
+async def data_stats() -> dict:
+    return _cached_corpus_stats()

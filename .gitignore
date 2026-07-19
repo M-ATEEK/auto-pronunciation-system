@@ -10,6 +10,7 @@ models/*.pkl
 
 data/*.webm
 data/*.wav
+data/librispeech
 data/librispeech/
 
 frontend/node_modules/

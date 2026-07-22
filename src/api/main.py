@@ -80,7 +80,14 @@ async def analyze(audio: UploadFile = File(...), transcript: str = Form(...)) ->
     detector = _cached_baseline_detector()
     raw = await audio.read()
     waveform = decode_audio(raw)
-    results = detector.detect(waveform, transcript, sr=SAMPLE_RATE)
+    try:
+        results = detector.detect(waveform, transcript, sr=SAMPLE_RATE)
+    except Exception:
+        _LOG.exception(
+            "analyze failed: transcript=%r audio_bytes=%d waveform_samples=%d",
+            transcript, len(raw), len(waveform),
+        )
+        raise HTTPException(status_code=500, detail="Analysis failed — see server log.")
     return {
         "transcript": transcript,
         "phones": [

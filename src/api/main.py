@@ -8,8 +8,10 @@ from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 
 from src.classification.baseline_detector import BaselineDetector
 from src.data.aligner import phones_for_text
-from src.data.librispeech import corpus_stats
+from src.data.librispeech import build_native_exemplars, corpus_stats
 from src.features.extractor import SAMPLE_RATE, extract_features
+from src.personalization.dtw import dtw_distance
+from src.personalization.profiler import ProfileManager
 from src.utils.audio_io import decode_audio
 from src.utils.logger import get_logger
 
@@ -19,6 +21,9 @@ VERSION = "0.1.0"
 
 _CORPUS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "librispeech")
 _BASELINE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "models", "baseline_rf.pkl")
+_PROFILE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "models", "profiles")
+
+_profile_manager = ProfileManager(_PROFILE_DIR)
 
 app = FastAPI(
     title="CAPT",
@@ -74,29 +79,56 @@ def _cached_baseline_detector() -> BaselineDetector:
     return BaselineDetector.load(_BASELINE_MODEL_PATH)
 
 
+@lru_cache(maxsize=1)
+def _cached_native_exemplars() -> dict:
+    """{phone: [MFCC-sequence, ...]} of real native LibriSpeech phones (Stage 4 reference)."""
+    return build_native_exemplars(_CORPUS_DIR, per_phone=3, max_utterances=80)
+
+
+def _native_reference_mfcc(phone: str):
+    """First available real native exemplar for ``phone``, or None if uncovered."""
+    exemplars = _cached_native_exemplars().get(phone)
+    return exemplars[0] if exemplars else None
+
+
 @app.post("/api/analyze")
-async def analyze(audio: UploadFile = File(...), transcript: str = Form(...)) -> dict:
-    """Classical (Random Forest) per-phone mispronunciation."""
+async def analyze(audio: UploadFile = File(...), transcript: str = Form(...),
+                   learner_id: str = Form("learner-001")) -> dict:
+    """Classical (Random Forest) per-phone mispronunciation + DTW distance."""
     detector = _cached_baseline_detector()
     raw = await audio.read()
     waveform = decode_audio(raw)
     try:
         results = detector.detect(waveform, transcript, sr=SAMPLE_RATE)
+        profile = _profile_manager.get_or_create(learner_id)
+
+        phones_out = []
+        for r in results:
+            dtw = None
+            if r.is_mispronounced and r.learner_mfcc is not None:
+                native_mfcc = _native_reference_mfcc(r.phone)
+                if native_mfcc is not None:
+                    dtw = round(dtw_distance(r.learner_mfcc, native_mfcc), 4)
+                    profile.update(r.phone, dtw)
+            phones_out.append({
+                "phone": r.phone,
+                "word": r.word,
+                "prob_mispronounced": r.prob_mispronounced,
+                "is_mispronounced": r.is_mispronounced,
+                "dtw_distance": dtw,
+            })
+        _profile_manager.save(learner_id)
     except Exception:
         _LOG.exception(
             "analyze failed: transcript=%r audio_bytes=%d waveform_samples=%d",
             transcript, len(raw), len(waveform),
         )
         raise HTTPException(status_code=500, detail="Analysis failed — see server log.")
-    return {
-        "transcript": transcript,
-        "phones": [
-            {
-                "phone": r.phone,
-                "word": r.word,
-                "prob_mispronounced": r.prob_mispronounced,
-                "is_mispronounced": r.is_mispronounced,
-            }
-            for r in results
-        ],
-    }
+
+    return {"transcript": transcript, "learner_id": learner_id, "phones": phones_out}
+
+
+@app.get("/api/profile/{learner_id}")
+async def get_profile(learner_id: str) -> dict:
+    """Return the learner's accumulated per-phone DTW error profile."""
+    return _profile_manager.profile_dict(learner_id)

@@ -80,26 +80,37 @@ const AnalysisPage: React.FC = () => {
             <p className="feedback-placeholder">Record and analyze to see per-sound results here.</p>
           )}
           {result && (
-            <table className="phone-results">
-              <thead>
-                <tr>
-                  <th>Word</th>
-                  <th>Phone</th>
-                  <th>P(mispronounced)</th>
-                  <th>Verdict</th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.phones.map((p, i) => (
-                  <tr key={i} className={p.is_mispronounced ? 'row-flagged' : 'row-ok'}>
-                    <td>{p.word}</td>
-                    <td>{p.phone}</td>
-                    <td>{p.prob_mispronounced.toFixed(2)}</td>
-                    <td>{p.is_mispronounced ? 'Mispronounced' : 'Correct'}</td>
+            <>
+              <p className="feedback-summary">
+                {result.phones.filter((p) => !p.is_mispronounced).length} / {result.phones.length} sounds correct
+              </p>
+              <table className="phone-results">
+                <thead>
+                  <tr>
+                    <th>Word</th>
+                    <th>Phone</th>
+                    <th>P(mispronounced)</th>
+                    <th>DTW distance</th>
+                    <th>Verdict</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {result.phones.map((p, i) => (
+                    <tr key={i} className={p.is_mispronounced ? 'row-flagged' : 'row-ok'}>
+                      <td>{p.word}</td>
+                      <td>{p.phone}</td>
+                      <td>{p.prob_mispronounced.toFixed(2)}</td>
+                      <td>{p.dtw_distance !== null ? p.dtw_distance.toFixed(2) : '—'}</td>
+                      <td>
+                        <span className={p.is_mispronounced ? 'badge badge-flagged' : 'badge badge-ok'}>
+                          {p.is_mispronounced ? 'Mispronounced' : 'Correct'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
           )}
         </section>
       </main>

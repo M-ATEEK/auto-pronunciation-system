@@ -7,6 +7,7 @@ __pycache__/
 venv/
 
 models/*.pkl
+models/profiles/
 
 data/*.webm
 data/*.wav

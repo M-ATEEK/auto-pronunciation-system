@@ -7,6 +7,7 @@ from functools import lru_cache
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 
 from src.classification.baseline_detector import BaselineDetector
+from src.classification.phoneme_recognizer import PhonemeRecognizer
 from src.data.aligner import phones_for_text
 from src.data.librispeech import build_native_exemplars, corpus_stats
 from src.features.extractor import SAMPLE_RATE, extract_features
@@ -132,3 +133,29 @@ async def analyze(audio: UploadFile = File(...), transcript: str = Form(...),
 async def get_profile(learner_id: str) -> dict:
     """Return the learner's accumulated per-phone DTW error profile."""
     return _profile_manager.profile_dict(learner_id)
+
+
+@app.post("/api/recognize")
+async def recognize(audio: UploadFile = File(...)) -> dict:
+    """Neural (wav2vec2) phoneme recognition -- what was actually said, no transcript needed."""
+    raw = await audio.read()
+    waveform = decode_audio(raw)
+    try:
+        recognizer = PhonemeRecognizer.instance()
+        recognized = recognizer.recognize(waveform, sr=SAMPLE_RATE)
+    except Exception:
+        _LOG.exception("recognize failed: audio_bytes=%d waveform_samples=%d", len(raw), len(waveform))
+        raise HTTPException(status_code=500, detail="Recognition failed — see server log.")
+
+    return {
+        "duration_s": round(len(waveform) / SAMPLE_RATE, 3),
+        "phones": [
+            {
+                "phone": p.phone,
+                "start_s": round(p.start_sample / SAMPLE_RATE, 3),
+                "end_s": round(p.end_sample / SAMPLE_RATE, 3),
+                "confidence": round(p.confidence, 4),
+            }
+            for p in recognized
+        ],
+    }

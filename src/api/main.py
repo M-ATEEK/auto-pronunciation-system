@@ -7,12 +7,13 @@ from functools import lru_cache
 from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 
 from src.classification.baseline_detector import BaselineDetector
+from src.classification.phoneme_align import align, is_confusable
 from src.classification.phoneme_recognizer import PhonemeRecognizer
-from src.data.aligner import phones_for_text
+from src.data.aligner import _phones_for_word, phones_for_text
 from src.data.librispeech import build_native_exemplars, corpus_stats
-from src.features.extractor import SAMPLE_RATE, extract_features
+from src.features.extractor import SAMPLE_RATE, extract_features, extract_mfcc_sequence
 from src.personalization.dtw import dtw_distance
-from src.personalization.profiler import ProfileManager
+from src.personalization.profiler import LearnerProfile, ProfileManager
 from src.utils.audio_io import decode_audio
 from src.utils.logger import get_logger
 
@@ -92,41 +93,114 @@ def _native_reference_mfcc(phone: str):
     return exemplars[0] if exemplars else None
 
 
+def _analyze_baseline(waveform, transcript: str, profile: LearnerProfile) -> list[dict]:
+    """Classical Random-Forest path: does this segment match the expected phone?"""
+    detector = _cached_baseline_detector()
+    results = detector.detect(waveform, transcript, sr=SAMPLE_RATE)
+
+    phones_out = []
+    for r in results:
+        dtw = None
+        if r.is_mispronounced and r.learner_mfcc is not None:
+            native_mfcc = _native_reference_mfcc(r.phone)
+            if native_mfcc is not None:
+                dtw = round(dtw_distance(r.learner_mfcc, native_mfcc), 4)
+        if r.is_mispronounced:
+            profile.update(r.phone, dtw if dtw is not None else 30.0)
+        phones_out.append({
+            "phone": r.phone,
+            "word": r.word,
+            "prob_mispronounced": r.prob_mispronounced,
+            "is_mispronounced": r.is_mispronounced,
+            "substitution": None,  # RF does not identify the substitute
+            "dtw_distance": dtw,
+        })
+    return phones_out
+
+
+def _analyze_neural(waveform, transcript: str, profile: LearnerProfile) -> list[dict]:
+    """Neural path: recognise what was actually said, align to the expected phones."""
+    expected: list[tuple[str, str]] = []  # (word, ARPABET phone)
+    for w in transcript.split():
+        w_clean = w.strip(".,!?;:'\"")
+        for ph in _phones_for_word(w_clean):
+            expected.append((w_clean, ph))
+    exp_phones = [ph for _, ph in expected]
+
+    recognizer = PhonemeRecognizer.instance()
+    recognized = recognizer.recognize(waveform, sr=SAMPLE_RATE)
+    recog_phones = [r.phone for r in recognized]
+
+    ops = align(exp_phones, recog_phones)
+
+    phones_out = []
+    for op in ops:
+        if op.op == "ins" or op.expected_index is None:
+            continue
+        word, phone = expected[op.expected_index]
+        substitution = None
+        dtw = None
+
+        if op.op == "match":
+            is_mispr = False
+            score = 0.2
+        elif op.op == "sub":
+            substitution = op.recognized
+            if is_confusable(phone, op.recognized):
+                is_mispr = False
+                score = 0.55
+            else:
+                is_mispr = True
+                score = 0.85
+            if op.recognized_index is not None:
+                rp = recognized[op.recognized_index]
+                learner_mfcc = extract_mfcc_sequence(
+                    waveform[rp.start_sample:rp.end_sample], sr=SAMPLE_RATE)
+                native_mfcc = _native_reference_mfcc(phone)
+                if native_mfcc is not None:
+                    dtw = round(dtw_distance(learner_mfcc, native_mfcc), 4)
+        else:  # "del" -- the expected phone was omitted entirely
+            is_mispr = True
+            score = 0.9
+
+        if is_mispr:
+            profile.update(phone, dtw if dtw is not None else 30.0)
+
+        phones_out.append({
+            "phone": phone,
+            "word": word,
+            "prob_mispronounced": score,
+            "is_mispronounced": is_mispr,
+            "substitution": substitution,
+            "dtw_distance": dtw,
+        })
+    return phones_out
+
+
 @app.post("/api/analyze")
 async def analyze(audio: UploadFile = File(...), transcript: str = Form(...),
-                   learner_id: str = Form("learner-001")) -> dict:
-    """Classical (Random Forest) per-phone mispronunciation + DTW distance."""
-    detector = _cached_baseline_detector()
+                   learner_id: str = Form("learner-001"),
+                   detector: str = Query("baseline", description="'baseline' or 'neural'")) -> dict:
+    """Per-phone mispronunciation detection. detector='baseline' (Random Forest,
+    default) or 'neural' (wav2vec2 recognise + align) -- both return the same shape.
+    """
     raw = await audio.read()
     waveform = decode_audio(raw)
+    profile = _profile_manager.get_or_create(learner_id)
     try:
-        results = detector.detect(waveform, transcript, sr=SAMPLE_RATE)
-        profile = _profile_manager.get_or_create(learner_id)
-
-        phones_out = []
-        for r in results:
-            dtw = None
-            if r.is_mispronounced and r.learner_mfcc is not None:
-                native_mfcc = _native_reference_mfcc(r.phone)
-                if native_mfcc is not None:
-                    dtw = round(dtw_distance(r.learner_mfcc, native_mfcc), 4)
-                    profile.update(r.phone, dtw)
-            phones_out.append({
-                "phone": r.phone,
-                "word": r.word,
-                "prob_mispronounced": r.prob_mispronounced,
-                "is_mispronounced": r.is_mispronounced,
-                "dtw_distance": dtw,
-            })
+        if detector == "neural":
+            phones_out = _analyze_neural(waveform, transcript, profile)
+        else:
+            phones_out = _analyze_baseline(waveform, transcript, profile)
         _profile_manager.save(learner_id)
     except Exception:
         _LOG.exception(
-            "analyze failed: transcript=%r audio_bytes=%d waveform_samples=%d",
-            transcript, len(raw), len(waveform),
+            "analyze failed: detector=%r transcript=%r audio_bytes=%d waveform_samples=%d",
+            detector, transcript, len(raw), len(waveform),
         )
         raise HTTPException(status_code=500, detail="Analysis failed — see server log.")
 
-    return {"transcript": transcript, "learner_id": learner_id, "phones": phones_out}
+    return {"transcript": transcript, "learner_id": learner_id, "detector": detector, "phones": phones_out}
 
 
 @app.get("/api/profile/{learner_id}")

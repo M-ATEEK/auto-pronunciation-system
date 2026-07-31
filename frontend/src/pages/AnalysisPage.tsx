@@ -3,11 +3,12 @@ import AudioRecorder from '../components/AudioRecorder/AudioRecorder';
 import TranscriptInput from '../components/TranscriptInput/TranscriptInput';
 import LoadingSpinner from '../components/LoadingSpinner/LoadingSpinner';
 import { analyzeAudio } from '../services/api';
-import { AnalysisResult } from '../types';
+import { AnalysisResult, DetectorChoice } from '../types';
 
 const AnalysisPage: React.FC = () => {
   const [transcript, setTranscript] = useState('');
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [detector, setDetector] = useState<DetectorChoice>('baseline');
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +28,7 @@ const AnalysisPage: React.FC = () => {
     setError(null);
 
     try {
-      const analysisResult = await analyzeAudio(audioBlob, transcript);
+      const analysisResult = await analyzeAudio(audioBlob, transcript, detector);
       setResult(analysisResult);
     } catch (err) {
       setError('Failed to analyze pronunciation. Please check your connection and try again.');
@@ -56,6 +57,30 @@ const AnalysisPage: React.FC = () => {
 
             <AudioRecorder onAudioReady={setAudioBlob} />
 
+            <fieldset className="detector-toggle" disabled={isLoading}>
+              <legend>Detection model</legend>
+              <label>
+                <input
+                  type="radio"
+                  name="detector"
+                  value="baseline"
+                  checked={detector === 'baseline'}
+                  onChange={() => setDetector('baseline')}
+                />
+                Classical (Random Forest)
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  name="detector"
+                  value="neural"
+                  checked={detector === 'neural'}
+                  onChange={() => setDetector('neural')}
+                />
+                Neural (wav2vec2)
+              </label>
+            </fieldset>
+
             {error && (
               <div className="error-message" role="alert">
                 {error}
@@ -82,6 +107,7 @@ const AnalysisPage: React.FC = () => {
           {result && (
             <>
               <p className="feedback-summary">
+                Analysed with <strong>{result.detector === 'neural' ? 'Neural (wav2vec2)' : 'Classical (Random Forest)'}</strong> —{' '}
                 {result.phones.filter((p) => !p.is_mispronounced).length} / {result.phones.length} sounds correct
               </p>
               <table className="phone-results">
@@ -90,6 +116,7 @@ const AnalysisPage: React.FC = () => {
                     <th>Word</th>
                     <th>Phone</th>
                     <th>P(mispronounced)</th>
+                    <th>Substitution</th>
                     <th>DTW distance</th>
                     <th>Verdict</th>
                   </tr>
@@ -100,6 +127,7 @@ const AnalysisPage: React.FC = () => {
                       <td>{p.word}</td>
                       <td>{p.phone}</td>
                       <td>{p.prob_mispronounced.toFixed(2)}</td>
+                      <td>{p.substitution ?? '—'}</td>
                       <td>{p.dtw_distance !== null ? p.dtw_distance.toFixed(2) : '—'}</td>
                       <td>
                         <span className={p.is_mispronounced ? 'badge badge-flagged' : 'badge badge-ok'}>

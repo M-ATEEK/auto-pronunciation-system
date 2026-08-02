@@ -11,6 +11,7 @@ from src.classification.phoneme_recognizer import PhonemeRecognizer
 from src.data.aligner import _phones_for_word
 from src.data.librispeech import build_native_exemplars
 from src.features.extractor import SAMPLE_RATE, extract_mfcc_sequence
+from src.personalization.discovery import NativeReferenceBank, discover_error_patterns, rules_to_dict
 from src.personalization.dtw import dtw_distance
 from src.personalization.profiler import LearnerProfile, ProfileManager
 from src.utils.logger import get_logger
@@ -20,10 +21,14 @@ _LOG = get_logger(__name__)
 _BASE_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
 _CORPUS_DIR = os.path.join(_BASE_DIR, "data", "librispeech")
 _BASELINE_MODEL_PATH = os.path.join(_BASE_DIR, "models", "baseline_rf.pkl")
+_EXEMPLAR_BANK_PATH = os.path.join(_BASE_DIR, "models", "native_exemplars.pkl")
 _PROFILE_DIR = os.path.join(_BASE_DIR, "models", "profiles")
 
 DETECTOR_BASELINE = "baseline"
 DETECTOR_NEURAL = "neural"
+
+# Once a discovered rule escalates a phone, this is the confidence floor applied.
+_SYSTEMATIC_SCORE_FLOOR = 0.82
 
 
 class CAPTSystem:
@@ -33,6 +38,7 @@ class CAPTSystem:
         self._profile_manager = ProfileManager(_PROFILE_DIR)
         self._baseline: BaselineDetector | None = None
         self._exemplars: dict | None = None
+        self._ref_bank: NativeReferenceBank | None = None
 
     # -- lazy-loaded shared resources (each loaded once per process)
     def _get_baseline(self) -> BaselineDetector:
@@ -52,6 +58,14 @@ class CAPTSystem:
         exemplars = self._get_exemplars().get(phone)
         return exemplars[0] if exemplars else None
 
+    def _get_ref_bank(self) -> NativeReferenceBank:
+        if self._ref_bank is None:
+            if not os.path.exists(_EXEMPLAR_BANK_PATH):
+                raise RuntimeError(
+                    "Native exemplar bank not built yet — run scripts/build_exemplars.py first.")
+            self._ref_bank = NativeReferenceBank.load(_EXEMPLAR_BANK_PATH)
+        return self._ref_bank
+
     # -- public API 
     def analyze(self, waveform, transcript: str, learner_id: str,
                 detector: str = DETECTOR_BASELINE) -> list[dict]:
@@ -67,6 +81,54 @@ class CAPTSystem:
     def profile_dict(self, learner_id: str) -> dict:
         return self._profile_manager.profile_dict(learner_id)
 
+    # -- Stage 4 calibration: discover systematic errors from a few sentences --
+    def _collect_phone_observations(self, waveform, transcript: str) -> list[tuple]:
+        """Return [(intended_phone, learner_MFCC_sequence), ...] for one utterance.
+        """
+        expected: list[str] = []
+        for w in transcript.split():
+            w_clean = w.strip(".,!?;:'\"")
+            expected.extend(_phones_for_word(w_clean))
+
+        recognizer = PhonemeRecognizer.instance()
+        recognized = recognizer.recognize(waveform, sr=SAMPLE_RATE)
+        recog_phones = [r.phone for r in recognized]
+        ops = align(expected, recog_phones)
+
+        obs: list[tuple] = []
+        for op in ops:
+            if op.op in ("match", "sub") and op.recognized_index is not None:
+                rp = recognized[op.recognized_index]
+                seg = waveform[rp.start_sample:rp.end_sample]
+                if len(seg) >= 160:
+                    obs.append((op.expected, extract_mfcc_sequence(seg, sr=SAMPLE_RATE)))
+        return obs
+
+    def calibrate(self, learner_id: str, sessions: list[tuple]) -> list[dict]:
+        """Discover the learner's systematic error patterns from a few sentences.
+
+        Args:
+            learner_id: learner identifier.
+            sessions:   list of (waveform, transcript) calibration recordings.
+
+        Returns:
+            List of discovered rule dicts (also stored in the learner's profile).
+        """
+        bank = self._get_ref_bank()
+
+        observations: list[tuple] = []
+        for waveform, transcript in sessions:
+            observations.extend(self._collect_phone_observations(waveform, transcript))
+
+        rules = discover_error_patterns(observations, bank)
+        rules_dict = rules_to_dict(rules)
+        profile = self._profile_manager.get_or_create(learner_id)
+        profile.set_discovered_rules(rules_dict)
+        self._profile_manager.save(learner_id)
+        _LOG.info("Calibration for %s discovered %d rule(s) from %d observations.",
+                  learner_id, len(rules), len(observations))
+        return [rules_dict[p] for p in rules_dict]
+
     # -- classical (Random Forest) path 
     def _analyze_baseline(self, waveform, transcript: str, profile: LearnerProfile) -> list[dict]:
         """Does this segment match the expected phone? (assumes the transcript is correct)"""
@@ -76,19 +138,31 @@ class CAPTSystem:
         phones_out = []
         for r in results:
             dtw = None
-            if r.is_mispronounced and r.learner_mfcc is not None:
+            is_mispr = r.is_mispronounced
+            score = r.prob_mispronounced
+            if is_mispr and r.learner_mfcc is not None:
                 native_mfcc = self._native_reference_mfcc(r.phone)
                 if native_mfcc is not None:
                     dtw = round(dtw_distance(r.learner_mfcc, native_mfcc), 4)
-            if r.is_mispronounced:
+
+            # Stage 4 -> Stage 3 loop: a previously discovered systematic error
+            is_systematic = False
+            rule = profile.rule_for(r.phone)
+            if rule is not None:
+                is_systematic = True
+                is_mispr = True
+                score = max(score, _SYSTEMATIC_SCORE_FLOOR)
+
+            if is_mispr:
                 profile.update(r.phone, dtw if dtw is not None else 30.0)
             phones_out.append({
                 "phone": r.phone,
                 "word": r.word,
-                "prob_mispronounced": r.prob_mispronounced,
-                "is_mispronounced": r.is_mispronounced,
+                "prob_mispronounced": score,
+                "is_mispronounced": is_mispr,
                 "substitution": None,  # RF does not identify the substitute
                 "dtw_distance": dtw,
+                "is_systematic": is_systematic,
             })
         return phones_out
 
@@ -138,6 +212,14 @@ class CAPTSystem:
                 is_mispr = True
                 score = 0.9
 
+            # Stage 4 -> Stage 3 loop: a previously discovered systematic error
+            is_systematic = False
+            rule = profile.rule_for(phone)
+            if rule is not None:
+                is_systematic = True
+                is_mispr = True
+                score = max(score, _SYSTEMATIC_SCORE_FLOOR)
+
             if is_mispr:
                 profile.update(phone, dtw if dtw is not None else 30.0)
 
@@ -148,5 +230,6 @@ class CAPTSystem:
                 "is_mispronounced": is_mispr,
                 "substitution": substitution,
                 "dtw_distance": dtw,
+                "is_systematic": is_systematic,
             })
         return phones_out

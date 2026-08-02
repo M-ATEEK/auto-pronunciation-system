@@ -7,6 +7,7 @@ export interface PhoneVerdict {
   is_mispronounced: boolean;
   substitution: string | null;
   dtw_distance: number | null;
+  is_systematic: boolean;
 }
 
 export interface AnalysisResult {
@@ -14,4 +15,30 @@ export interface AnalysisResult {
   learner_id: string;
   detector: DetectorChoice;
   phones: PhoneVerdict[];
+}
+
+export interface DiscoveredRule {
+  phone: string;
+  type: 'substitution' | 'distortion';
+  substituted_with: string | null;
+  support: number;
+  confidence: number;
+  mean_dtw: number;
+}
+
+export interface CalibrationResult {
+  learner_id: string;
+  rules: DiscoveredRule[];
+}
+
+export interface PhoneStat {
+  count: number;
+  mean_dtw: number;
+  is_systematic: boolean;
+}
+
+export interface LearnerProfileData {
+  learner_id: string;
+  phone_stats: Record<string, PhoneStat>;
+  discovered_rules: Record<string, DiscoveredRule>;
 }

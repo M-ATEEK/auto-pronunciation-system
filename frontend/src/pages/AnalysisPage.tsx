@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import AudioRecorder from '../components/AudioRecorder/AudioRecorder';
 import TranscriptInput from '../components/TranscriptInput/TranscriptInput';
 import LoadingSpinner from '../components/LoadingSpinner/LoadingSpinner';
+import CalibrationPanel from '../components/CalibrationPanel/CalibrationPanel';
 import { analyzeAudio } from '../services/api';
 import { AnalysisResult, DetectorChoice } from '../types';
+
+const LEARNER_ID = 'learner-001';
 
 const AnalysisPage: React.FC = () => {
   const [transcript, setTranscript] = useState('');
@@ -133,6 +136,11 @@ const AnalysisPage: React.FC = () => {
                         <span className={p.is_mispronounced ? 'badge badge-flagged' : 'badge badge-ok'}>
                           {p.is_mispronounced ? 'Mispronounced' : 'Correct'}
                         </span>
+                        {p.is_systematic && (
+                          <span className="badge badge-flagged" style={{ marginLeft: 6 }}>
+                            Systematic
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -141,6 +149,8 @@ const AnalysisPage: React.FC = () => {
             </>
           )}
         </section>
+
+        <CalibrationPanel learnerId={LEARNER_ID} />
       </main>
     </div>
   );

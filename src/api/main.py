@@ -95,6 +95,34 @@ async def get_profile(learner_id: str) -> dict:
     return _capt.profile_dict(learner_id)
 
 
+@app.post("/api/calibrate")
+async def calibrate(audio: list[UploadFile] = File(...),
+                     transcripts: list[str] = Form(...),
+                     learner_id: str = Form("learner-001")) -> dict:
+    """Discover the learner's systematic error patterns from a few read-aloud
+    sentences (Stage 4). Stores the discovered rules in the learner's profile,
+    .
+    """
+    if len(audio) != len(transcripts):
+        raise HTTPException(status_code=400,
+                             detail="audio and transcripts must have the same length")
+
+    sessions = []
+    for f, t in zip(audio, transcripts):
+        raw = await f.read()
+        sessions.append((decode_audio(raw), t))
+
+    try:
+        rules = _capt.calibrate(learner_id, sessions)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception:
+        _LOG.exception("calibrate failed: learner_id=%r sessions=%d", learner_id, len(sessions))
+        raise HTTPException(status_code=500, detail="Calibration failed  see server log.")
+
+    return {"learner_id": learner_id, "rules": rules}
+
+
 @app.post("/api/recognize")
 async def recognize(audio: UploadFile = File(...)) -> dict:
     """Neural (wav2vec2) phoneme recognition -- what was actually said, no transcript needed."""

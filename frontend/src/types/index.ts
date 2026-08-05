@@ -8,6 +8,8 @@ export interface PhoneVerdict {
   substitution: string | null;
   dtw_distance: number | null;
   is_systematic: boolean;
+  text_hint: string | null;
+  learner_audio_uri: string | null;
 }
 
 export interface AnalysisResult {
@@ -15,6 +17,9 @@ export interface AnalysisResult {
   learner_id: string;
   detector: DetectorChoice;
   phones: PhoneVerdict[];
+  match_confidence: number;
+  match_warning: boolean;
+  articulation_rate: number | null;
 }
 
 export interface DiscoveredRule {

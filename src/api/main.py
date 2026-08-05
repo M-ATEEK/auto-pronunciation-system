@@ -4,11 +4,13 @@ import logging
 import os
 from functools import lru_cache
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Response, UploadFile
 
 from src.classification.phoneme_recognizer import PhonemeRecognizer
 from src.data.aligner import phones_for_text
 from src.data.librispeech import corpus_stats
+from src.feedback.tts import cache_key as tts_cache_key
+from src.feedback.tts import synthesize_wav_bytes
 from src.features.extractor import SAMPLE_RATE, extract_features
 from src.pipeline.capt_system import CAPTSystem
 from src.utils.audio_io import decode_audio
@@ -76,7 +78,7 @@ async def analyze(audio: UploadFile = File(...), transcript: str = Form(...),
     raw = await audio.read()
     waveform = decode_audio(raw)
     try:
-        phones_out = _capt.analyze(waveform, transcript, learner_id, detector=detector)
+        result = _capt.analyze(waveform, transcript, learner_id, detector=detector)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc))
     except Exception:
@@ -86,7 +88,34 @@ async def analyze(audio: UploadFile = File(...), transcript: str = Form(...),
         )
         raise HTTPException(status_code=500, detail="Analysis failed — see server log.")
 
-    return {"transcript": transcript, "learner_id": learner_id, "detector": detector, "phones": phones_out}
+    return {
+        "transcript": transcript,
+        "learner_id": learner_id,
+        "detector": detector,
+        "phones": result["phones"],
+        "match_confidence": result["match_confidence"],
+        "match_warning": result["match_warning"],
+        "articulation_rate": result["articulation_rate"],
+    }
+
+
+@app.get("/api/reference")
+async def reference(text: str = Query(..., description="Text to synthesise as native reference audio")):
+    """Native-quality TTS reference pronunciation of ``text``."""
+    text = (text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Query parameter 'text' is required.")
+    if len(text) > 300:
+        raise HTTPException(status_code=400, detail="Text too long (max 300 chars).")
+    wav = synthesize_wav_bytes(text)
+    return Response(
+        content=wav,
+        media_type="audio/wav",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "ETag": f'"{tts_cache_key(text)}"',
+        },
+    )
 
 
 @app.get("/api/profile/{learner_id}")

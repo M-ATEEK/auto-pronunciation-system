@@ -5,11 +5,14 @@ from __future__ import annotations
 
 import os
 
+import numpy as np
+
 from src.classification.baseline_detector import BaselineDetector
 from src.classification.phoneme_align import align, is_confusable
 from src.classification.phoneme_recognizer import PhonemeRecognizer
 from src.data.aligner import _phones_for_word
 from src.data.librispeech import build_native_exemplars
+from src.feedback.generator import generate_feedback
 from src.features.extractor import SAMPLE_RATE, extract_mfcc_sequence
 from src.personalization.discovery import NativeReferenceBank, discover_error_patterns, rules_to_dict
 from src.personalization.dtw import dtw_distance
@@ -29,6 +32,32 @@ DETECTOR_NEURAL = "neural"
 
 # Once a discovered rule escalates a phone, this is the confidence floor applied.
 _SYSTEMATIC_SCORE_FLOOR = 0.82
+
+# Utterance-level plausibility guard no natural speaking rate exceeds this
+_MAX_PHONES_PER_SEC = 16.0
+_CLIP_PAD_S = 0.08  # padding around a phone segment so learner playback is audible
+
+
+def _articulation_implausible(waveform: np.ndarray, transcript: str,
+                               sr: int = SAMPLE_RATE) -> tuple[bool, float]:
+    """Return (is_implausible, phones_per_second).
+
+    Flags the case where the transcript has far more phones than the active
+    (non silent) audio duration could hold at any natural speaking rate.
+    """
+    n_phones = 0
+    for w in transcript.split():
+        n_phones += len(_phones_for_word(w.strip(".,!?;:'\"")))
+    if n_phones == 0 or waveform.size == 0:
+        return False, 0.0
+    win, hop = int(0.025 * sr), int(0.010 * sr)
+    active_frames = 0
+    for i in range(0, max(0, len(waveform) - win), hop):
+        if np.sqrt(np.mean(waveform[i:i + win] ** 2) + 1e-9) > 0.01:
+            active_frames += 1
+    active_dur = active_frames * hop / sr
+    rate = n_phones / max(active_dur, 0.05)
+    return rate > _MAX_PHONES_PER_SEC, round(rate, 1)
 
 
 class CAPTSystem:
@@ -66,17 +95,37 @@ class CAPTSystem:
             self._ref_bank = NativeReferenceBank.load(_EXEMPLAR_BANK_PATH)
         return self._ref_bank
 
-    # -- public API 
+    # -- public API
     def analyze(self, waveform, transcript: str, learner_id: str,
-                detector: str = DETECTOR_BASELINE) -> list[dict]:
-        """Run one detector's full per-phone analysis and update the learner profile."""
+                detector: str = DETECTOR_BASELINE) -> dict:
+        """Run one detector's full per-phone analysis and update the learner profile.
+
+        Returns a dict with ``phones`` plus an utterance-level mismatch guard        """
         profile = self._profile_manager.get_or_create(learner_id)
         if detector == DETECTOR_NEURAL:
             phones_out = self._analyze_neural(waveform, transcript, profile)
         else:
             phones_out = self._analyze_baseline(waveform, transcript, profile)
         self._profile_manager.save(learner_id)
-        return phones_out
+
+        total = max(len(phones_out), 1)
+        correct = sum(1 for p in phones_out if not p["is_mispronounced"])
+        match_confidence = round(correct / total, 3)
+        match_warning = match_confidence < 0.5
+
+        implausible, rate = _articulation_implausible(waveform, transcript)
+        articulation_rate = None
+        if implausible:
+            match_warning = True
+            match_confidence = min(match_confidence, 0.2)
+            articulation_rate = rate
+
+        return {
+            "phones": phones_out,
+            "match_confidence": match_confidence,
+            "match_warning": match_warning,
+            "articulation_rate": articulation_rate,
+        }
 
     def profile_dict(self, learner_id: str) -> dict:
         return self._profile_manager.profile_dict(learner_id)
@@ -155,6 +204,13 @@ class CAPTSystem:
 
             if is_mispr:
                 profile.update(r.phone, dtw if dtw is not None else 30.0)
+
+            text_hint, learner_audio_uri = None, None
+            if is_mispr:
+                feedback = generate_feedback(r.phone, r.audio_clip, sr=SAMPLE_RATE)
+                text_hint = feedback.text_hint
+                learner_audio_uri = feedback.learner_audio_uri or None
+
             phones_out.append({
                 "phone": r.phone,
                 "word": r.word,
@@ -163,6 +219,8 @@ class CAPTSystem:
                 "substitution": None,  # RF does not identify the substitute
                 "dtw_distance": dtw,
                 "is_systematic": is_systematic,
+                "text_hint": text_hint,
+                "learner_audio_uri": learner_audio_uri,
             })
         return phones_out
 
@@ -182,6 +240,7 @@ class CAPTSystem:
 
         ops = align(exp_phones, recog_phones)
 
+        pad = int(_CLIP_PAD_S * SAMPLE_RATE)
         phones_out = []
         for op in ops:
             if op.op == "ins" or op.expected_index is None:
@@ -189,6 +248,7 @@ class CAPTSystem:
             word, phone = expected[op.expected_index]
             substitution = None
             dtw = None
+            audio_clip = None
 
             if op.op == "match":
                 is_mispr = False
@@ -208,6 +268,9 @@ class CAPTSystem:
                     native_mfcc = self._native_reference_mfcc(phone)
                     if native_mfcc is not None:
                         dtw = round(dtw_distance(learner_mfcc, native_mfcc), 4)
+                    lo = max(0, rp.start_sample - pad)
+                    hi = min(len(waveform), rp.end_sample + pad)
+                    audio_clip = waveform[lo:hi]
             else:  # "del" -- the expected phone was omitted entirely
                 is_mispr = True
                 score = 0.9
@@ -223,6 +286,12 @@ class CAPTSystem:
             if is_mispr:
                 profile.update(phone, dtw if dtw is not None else 30.0)
 
+            text_hint, learner_audio_uri = None, None
+            if is_mispr:
+                feedback = generate_feedback(phone, audio_clip, sr=SAMPLE_RATE)
+                text_hint = feedback.text_hint
+                learner_audio_uri = feedback.learner_audio_uri or None
+
             phones_out.append({
                 "phone": phone,
                 "word": word,
@@ -231,5 +300,7 @@ class CAPTSystem:
                 "substitution": substitution,
                 "dtw_distance": dtw,
                 "is_systematic": is_systematic,
+                "text_hint": text_hint,
+                "learner_audio_uri": learner_audio_uri,
             })
         return phones_out

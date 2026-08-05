@@ -3,6 +3,7 @@ import AudioRecorder from '../components/AudioRecorder/AudioRecorder';
 import TranscriptInput from '../components/TranscriptInput/TranscriptInput';
 import LoadingSpinner from '../components/LoadingSpinner/LoadingSpinner';
 import CalibrationPanel from '../components/CalibrationPanel/CalibrationPanel';
+import FeedbackCard from '../components/FeedbackCard/FeedbackCard';
 import { analyzeAudio } from '../services/api';
 import { AnalysisResult, DetectorChoice } from '../types';
 
@@ -109,6 +110,15 @@ const AnalysisPage: React.FC = () => {
           )}
           {result && (
             <>
+              {result.match_warning && (
+                <div className="mismatch-banner" role="alert">
+                  <strong>⚠ This recording may not match the sentence.</strong>{' '}
+                  {result.articulation_rate !== null
+                    ? `The transcript has too many sounds to fit naturally in this recording (${result.articulation_rate} phones/sec). `
+                    : 'Only a small fraction of expected sounds were detected. '}
+                  Double-check you recorded the right sentence before trusting the feedback below.
+                </div>
+              )}
               <p className="feedback-summary">
                 Analysed with <strong>{result.detector === 'neural' ? 'Neural (wav2vec2)' : 'Classical (Random Forest)'}</strong> —{' '}
                 {result.phones.filter((p) => !p.is_mispronounced).length} / {result.phones.length} sounds correct
@@ -146,6 +156,17 @@ const AnalysisPage: React.FC = () => {
                   ))}
                 </tbody>
               </table>
+
+              {result.phones.some((p) => p.is_mispronounced) && (
+                <div className="feedback-cards">
+                  <h3>Sound by sound feedback</h3>
+                  {result.phones
+                    .filter((p) => p.is_mispronounced)
+                    .map((p, i) => (
+                      <FeedbackCard key={i} verdict={p} />
+                    ))}
+                </div>
+              )}
             </>
           )}
         </section>

@@ -253,145 +253,6 @@ body {
   line-height: 1.5;
 }
 
-.feedback-cards {
-  margin-top: 20px;
-}
-
-.feedback-cards h3 {
-  font-size: 15px;
-  margin-bottom: 12px;
-}
-
-.feedback-card {
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
-}
-
-.feedback-card--systematic {
-  border-color: #e53e3e;
-}
-
-.feedback-card-header {
-  margin-bottom: 8px;
-}
-
-.feedback-card-word {
-  font-size: 13px;
-  color: #718096;
-  font-weight: 500;
-}
-
-.feedback-card-phones {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 4px;
-}
-
-.feedback-card-phone {
-  font-size: 22px;
-  font-weight: 700;
-  color: #2d3748;
-}
-
-.feedback-card-phone--sub {
-  color: #e53e3e;
-}
-
-.feedback-card-arrow {
-  font-size: 18px;
-  color: #a0aec0;
-}
-
-.feedback-card-note {
-  font-size: 13px;
-  color: #718096;
-}
-
-.feedback-card-score {
-  margin-bottom: 12px;
-}
-
-.feedback-card-score-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #718096;
-  margin-bottom: 3px;
-}
-
-.feedback-card-bar {
-  height: 6px;
-  background: #e2e8f0;
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.feedback-card-bar-fill {
-  height: 100%;
-  background: #e53e3e;
-  border-radius: 3px;
-}
-
-.feedback-card-hint {
-  background: #f7fafc;
-  border-radius: 6px;
-  padding: 10px 14px;
-  font-size: 14px;
-  color: #2d3748;
-  line-height: 1.6;
-  margin-bottom: 12px;
-}
-
-.feedback-card-audio {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
-}
-
-.audio-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.audio-button--learner {
-  border: 1.5px solid #ed8936;
-  background: #fffaf0;
-  color: #c05621;
-}
-
-.audio-button--reference {
-  border: 1.5px solid #3182ce;
-  background: #ebf8ff;
-  color: #2b6cb0;
-}
-
-.feedback-card-systematic-note {
-  margin-top: 10px;
-  font-size: 12px;
-  color: #e53e3e;
-  font-weight: 600;
-}
-
-.feedback-card-waveform {
-  margin-top: 12px;
-}
-
-.feedback-card-waveform-label {
-  font-size: 12px;
-  color: #718096;
-  margin-bottom: 4px;
-}
-
 .profile-dashboard-summary {
   font-size: 13px;
   color: #4a5568;
@@ -473,4 +334,101 @@ body {
 
 .legend-swatch--systematic {
   background: #e53e3e;
+}
+
+.mouth-feedback {
+  margin-top: 22px;
+}
+
+.mouth-feedback h3 {
+  font-size: 15px;
+  margin-bottom: 12px;
+}
+
+.mouth-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.mouth-row-head {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2d3748;
+  margin-bottom: 10px;
+}
+
+.mouth-panels {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.mouth-diagram {
+  margin: 0;
+  width: 170px;
+  flex: 0 0 auto;
+}
+
+.mouth-diagram svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.mouth-diagram--target svg {
+  border-color: #38a169;
+  background: #f0fff4;
+}
+
+.mouth-diagram figcaption {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 5px;
+}
+
+.mouth-phone {
+  font-size: 15px;
+  font-weight: 700;
+  color: #2d3748;
+}
+
+.mouth-label {
+  font-size: 12px;
+  color: #718096;
+}
+
+.mouth-face   { fill: #fdf6ec; stroke: #d8c3a5; stroke-width: 1.5; }
+.mouth-palate { fill: none; stroke: #c9ada7; stroke-width: 3; stroke-linecap: round; }
+.mouth-teeth  { fill: #ffffff; stroke: #cbd5e0; stroke-width: 1; }
+.mouth-tongue { fill: #f08a8a; stroke: #d16a6a; stroke-width: 1.5; }
+.mouth-lip    { fill: none; stroke: #c0616b; stroke-width: 5; stroke-linecap: round; }
+.mouth-voicing{ fill: #4a90d9; opacity: 0.75; }
+
+.mouth-advice {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.mouth-advice h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a5568;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.mouth-diffs {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: #2d3748;
 }

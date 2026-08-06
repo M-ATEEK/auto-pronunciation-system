@@ -12,11 +12,15 @@ from src.classification.content_verifier import verify_content
 from src.classification.phoneme_align import align, is_confusable
 from src.classification.phoneme_recognizer import PhonemeRecognizer
 from src.data.aligner import _phones_for_word, unknown_words
+from src.feedback.articulation import (
+    articulation_for,
+    describe_difference,
+    describe_target,
+)
 from src.data.librispeech import build_native_exemplars
-from src.feedback.generator import generate_feedback
 from src.features.extractor import SAMPLE_RATE, extract_mfcc_sequence
 from src.personalization.discovery import NativeReferenceBank, discover_error_patterns, rules_to_dict
-from src.personalization.dtw import dtw_path
+from src.personalization.dtw import dtw_distance
 from src.personalization.profiler import LearnerProfile, ProfileManager
 from src.utils.audio_io import has_speech
 from src.utils.logger import get_logger
@@ -37,7 +41,6 @@ _SYSTEMATIC_SCORE_FLOOR = 0.82
 
 # Utterance-level plausibility guard no natural speaking rate exceeds this
 _MAX_PHONES_PER_SEC = 16.0
-_CLIP_PAD_S = 0.08  # padding around a phone segment so learner playback is audible
 
 
 def _articulation_implausible(waveform: np.ndarray, transcript: str,
@@ -60,6 +63,29 @@ def _articulation_implausible(waveform: np.ndarray, transcript: str,
     active_dur = active_frames * hop / sr
     rate = n_phones / max(active_dur, 0.05)
     return rate > _MAX_PHONES_PER_SEC, round(rate, 1)
+
+
+def _articulation_block(expected: str, produced: str | None) -> dict | None:
+    """Target articulation, the heard one (if known), and how to close the gap.
+
+    ``produced`` is None whenever the detector cannot name what was said -- the
+    classical detector never can, and an omitted phone has nothing to name. In
+    that case the target mouth is returned alongside absolute instructions for
+    producing it, which need no recognition at all.
+    """
+    target = articulation_for(expected)
+    if target is None:
+        return None
+    heard = articulation_for(produced) if produced else None
+    return {
+        "target": target.to_dict(),
+        "heard": heard.to_dict() if heard else None,
+        "differences": describe_difference(expected, produced) if produced else [],
+        # Always present: how to produce the target, derived from the transcript
+        # alone. This is the whole feedback for the classical detector and a
+        # fallback for the neural one when it cannot name the produced sound.
+        "instructions": describe_target(expected),
+    }
 
 
 class CAPTSystem:
@@ -214,19 +240,12 @@ class CAPTSystem:
         phones_out = []
         for r in results:
             dtw = None
-            waveform_data = None
             is_mispr = r.is_mispronounced
             score = r.prob_mispronounced
             if is_mispr and r.learner_mfcc is not None:
                 native_mfcc = self._native_reference_mfcc(r.phone)
                 if native_mfcc is not None:
-                    dist, path = dtw_path(r.learner_mfcc, native_mfcc)
-                    dtw = round(dist, 4)
-                    waveform_data = {
-                        "learner_mfcc": r.learner_mfcc.tolist(),
-                        "native_mfcc": native_mfcc.tolist(),
-                        "dtw_path": [[int(i), int(j)] for i, j in path],
-                    }
+                    dtw = round(dtw_distance(r.learner_mfcc, native_mfcc), 4)
 
             # Stage 4 -> Stage 3 loop: a previously discovered systematic error
             is_systematic = False
@@ -239,12 +258,6 @@ class CAPTSystem:
             if is_mispr:
                 profile.update(r.phone, dtw if dtw is not None else 30.0)
 
-            text_hint, learner_audio_uri = None, None
-            if is_mispr:
-                feedback = generate_feedback(r.phone, r.audio_clip, sr=SAMPLE_RATE)
-                text_hint = feedback.text_hint
-                learner_audio_uri = feedback.learner_audio_uri or None
-
             phones_out.append({
                 "phone": r.phone,
                 "word": r.word,
@@ -253,9 +266,7 @@ class CAPTSystem:
                 "substitution": None,  # RF does not identify the substitute
                 "dtw_distance": dtw,
                 "is_systematic": is_systematic,
-                "text_hint": text_hint,
-                "learner_audio_uri": learner_audio_uri,
-                "waveform_data": waveform_data,
+                "articulation": _articulation_block(r.phone, None) if is_mispr else None,
             })
         return phones_out
 
@@ -275,7 +286,6 @@ class CAPTSystem:
 
         ops = align(exp_phones, recog_phones)
 
-        pad = int(_CLIP_PAD_S * SAMPLE_RATE)
         phones_out = []
         for op in ops:
             if op.op == "ins" or op.expected_index is None:
@@ -283,8 +293,6 @@ class CAPTSystem:
             word, phone = expected[op.expected_index]
             substitution = None
             dtw = None
-            audio_clip = None
-            waveform_data = None
 
             if op.op == "match":
                 is_mispr = False
@@ -303,16 +311,7 @@ class CAPTSystem:
                         waveform[rp.start_sample:rp.end_sample], sr=SAMPLE_RATE)
                     native_mfcc = self._native_reference_mfcc(phone)
                     if native_mfcc is not None:
-                        dist, path = dtw_path(learner_mfcc, native_mfcc)
-                        dtw = round(dist, 4)
-                        waveform_data = {
-                            "learner_mfcc": learner_mfcc.tolist(),
-                            "native_mfcc": native_mfcc.tolist(),
-                            "dtw_path": [[int(i), int(j)] for i, j in path],
-                        }
-                    lo = max(0, rp.start_sample - pad)
-                    hi = min(len(waveform), rp.end_sample + pad)
-                    audio_clip = waveform[lo:hi]
+                        dtw = round(dtw_distance(learner_mfcc, native_mfcc), 4)
             else:  # "del" -- the expected phone was omitted entirely
                 is_mispr = True
                 score = 0.9
@@ -328,12 +327,6 @@ class CAPTSystem:
             if is_mispr:
                 profile.update(phone, dtw if dtw is not None else 30.0)
 
-            text_hint, learner_audio_uri = None, None
-            if is_mispr:
-                feedback = generate_feedback(phone, audio_clip, sr=SAMPLE_RATE)
-                text_hint = feedback.text_hint
-                learner_audio_uri = feedback.learner_audio_uri or None
-
             phones_out.append({
                 "phone": phone,
                 "word": word,
@@ -342,8 +335,6 @@ class CAPTSystem:
                 "substitution": substitution,
                 "dtw_distance": dtw,
                 "is_systematic": is_systematic,
-                "text_hint": text_hint,
-                "learner_audio_uri": learner_audio_uri,
-                "waveform_data": waveform_data,
+                "articulation": _articulation_block(phone, substitution) if is_mispr else None,
             })
         return phones_out

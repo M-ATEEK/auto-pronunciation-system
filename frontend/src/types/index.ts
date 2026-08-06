@@ -1,9 +1,26 @@
 export type DetectorChoice = 'baseline' | 'neural';
 
-export interface WaveformData {
-  learner_mfcc: number[][];
-  native_mfcc: number[][];
-  dtw_path: number[][];
+export interface Articulation {
+  phone: string;
+  lip_rounding: number;
+  jaw_openness: number;
+  tongue_front: number;
+  tongue_height: number;
+  tongue_tip: number;
+  manner: string;
+  voiced: boolean;
+  tense: boolean;
+  place: string;
+}
+
+export interface ArticulationBlock {
+  target: Articulation;
+  /** Null when the detector cannot name what was produced (classical, or an omission). */
+  heard: Articulation | null;
+  /** How to move from the produced sound to the target; empty when `heard` is null. */
+  differences: string[];
+  /** How to produce the target sound. Derived from the text, so always available. */
+  instructions: string[];
 }
 
 export interface PhoneVerdict {
@@ -14,9 +31,7 @@ export interface PhoneVerdict {
   substitution: string | null;
   dtw_distance: number | null;
   is_systematic: boolean;
-  text_hint: string | null;
-  learner_audio_uri: string | null;
-  waveform_data: WaveformData | null;
+  articulation: ArticulationBlock | null;
 }
 
 export interface AnalysisResult {

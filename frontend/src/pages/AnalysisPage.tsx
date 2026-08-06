@@ -3,7 +3,7 @@ import AudioRecorder from '../components/AudioRecorder/AudioRecorder';
 import TranscriptInput from '../components/TranscriptInput/TranscriptInput';
 import LoadingSpinner from '../components/LoadingSpinner/LoadingSpinner';
 import CalibrationPanel from '../components/CalibrationPanel/CalibrationPanel';
-import FeedbackCard from '../components/FeedbackCard/FeedbackCard';
+import MouthDiagram from '../components/MouthDiagram/MouthDiagram';
 import { analyzeAudio } from '../services/api';
 import { AnalysisResult, DetectorChoice } from '../types';
 
@@ -177,13 +177,45 @@ const AnalysisPage: React.FC = () => {
                 </tbody>
               </table>
 
-              {result.phones.some((p) => p.is_mispronounced) && (
-                <div className="feedback-cards">
-                  <h3>Sound by sound feedback</h3>
+              {result.phones.some((p) => p.articulation) && (
+                <div className="mouth-feedback">
+                  <h3>How to fix each sound</h3>
                   {result.phones
-                    .filter((p) => p.is_mispronounced)
+                    .filter((p) => p.articulation)
                     .map((p, i) => (
-                      <FeedbackCard key={i} verdict={p} />
+                      <div className="mouth-row" key={i}>
+                        <div className="mouth-row-head">
+                          In &ldquo;{p.word}&rdquo; &mdash; /{p.phone}/
+                        </div>
+                        <div className="mouth-panels">
+                          <MouthDiagram
+                            shape={p.articulation!.target}
+                            from={p.articulation!.heard}
+                            label="Target"
+                            highlight
+                          />
+                          {p.articulation!.heard && (
+                            <MouthDiagram shape={p.articulation!.heard} label="What we heard" />
+                          )}
+                          {/* With a produced sound named we can say how to close the gap;
+                              without one we still know the target, so teach that instead. */}
+                          <div className="mouth-advice">
+                            <h4>
+                              {p.articulation!.heard
+                                ? 'How to correct it'
+                                : `How to make the /${p.phone}/ sound`}
+                            </h4>
+                            <ul className="mouth-diffs">
+                              {(p.articulation!.heard && p.articulation!.differences.length > 0
+                                ? p.articulation!.differences
+                                : p.articulation!.instructions
+                              ).map((d, j) => (
+                                <li key={j}>{d}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
                     ))}
                 </div>
               )}

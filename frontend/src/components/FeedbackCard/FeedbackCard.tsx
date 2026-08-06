@@ -1,4 +1,5 @@
 import React from 'react';
+import WaveformView from '../WaveformView/WaveformView';
 import { PhoneVerdict } from '../../types';
 
 interface FeedbackCardProps {
@@ -72,6 +73,19 @@ const FeedbackCard: React.FC<FeedbackCardProps> = ({ verdict }) => {
           <span aria-hidden="true"></span> Hear correct pronunciation
         </button>
       </div>
+
+      {verdict.waveform_data && (
+        <div className="feedback-card-waveform">
+          <div className="feedback-card-waveform-label">
+            Your pronunciation (left) vs native speaker (right)
+          </div>
+          <WaveformView
+            learnerMfcc={verdict.waveform_data.learner_mfcc}
+            nativeMfcc={verdict.waveform_data.native_mfcc}
+            dtwPath={verdict.waveform_data.dtw_path}
+          />
+        </div>
+      )}
 
       {verdict.is_systematic && (
         <div className="feedback-card-systematic-note">

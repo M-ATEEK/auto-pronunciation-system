@@ -8,15 +8,17 @@ import os
 import numpy as np
 
 from src.classification.baseline_detector import BaselineDetector
+from src.classification.content_verifier import verify_content
 from src.classification.phoneme_align import align, is_confusable
 from src.classification.phoneme_recognizer import PhonemeRecognizer
-from src.data.aligner import _phones_for_word
+from src.data.aligner import _phones_for_word, unknown_words
 from src.data.librispeech import build_native_exemplars
 from src.feedback.generator import generate_feedback
 from src.features.extractor import SAMPLE_RATE, extract_mfcc_sequence
 from src.personalization.discovery import NativeReferenceBank, discover_error_patterns, rules_to_dict
-from src.personalization.dtw import dtw_distance
+from src.personalization.dtw import dtw_path
 from src.personalization.profiler import LearnerProfile, ProfileManager
+from src.utils.audio_io import has_speech
 from src.utils.logger import get_logger
 
 _LOG = get_logger(__name__)
@@ -101,6 +103,20 @@ class CAPTSystem:
         """Run one detector's full per-phone analysis and update the learner profile.
 
         Returns a dict with ``phones`` plus an utterance-level mismatch guard        """
+        unknown = unknown_words(transcript)
+
+        if not has_speech(waveform):
+            return {
+                "phones": [],
+                "match_confidence": 0.0,
+                "match_warning": True,
+                "articulation_rate": None,
+                "content_ratio": None,
+                "content_mismatch": False,
+                "unknown_words": unknown,
+                "no_speech": True,
+            }
+
         profile = self._profile_manager.get_or_create(learner_id)
         if detector == DETECTOR_NEURAL:
             phones_out = self._analyze_neural(waveform, transcript, profile)
@@ -113,6 +129,8 @@ class CAPTSystem:
         match_confidence = round(correct / total, 3)
         match_warning = match_confidence < 0.5
 
+        # Guard 1 (recognition-free, cheap): the transcript cannot physically
+        # fit in the spoken audio at any natural speaking rate.
         implausible, rate = _articulation_implausible(waveform, transcript)
         articulation_rate = None
         if implausible:
@@ -120,11 +138,20 @@ class CAPTSystem:
             match_confidence = min(match_confidence, 0.2)
             articulation_rate = rate
 
+        content_ratio, content_mismatch = verify_content(waveform, transcript)
+        if content_mismatch:
+            match_warning = True
+            match_confidence = min(match_confidence, 0.2)
+
         return {
             "phones": phones_out,
             "match_confidence": match_confidence,
             "match_warning": match_warning,
             "articulation_rate": articulation_rate,
+            "content_ratio": content_ratio,
+            "content_mismatch": content_mismatch,
+            "unknown_words": unknown,
+            "no_speech": False,
         }
 
     def profile_dict(self, learner_id: str) -> dict:
@@ -187,12 +214,19 @@ class CAPTSystem:
         phones_out = []
         for r in results:
             dtw = None
+            waveform_data = None
             is_mispr = r.is_mispronounced
             score = r.prob_mispronounced
             if is_mispr and r.learner_mfcc is not None:
                 native_mfcc = self._native_reference_mfcc(r.phone)
                 if native_mfcc is not None:
-                    dtw = round(dtw_distance(r.learner_mfcc, native_mfcc), 4)
+                    dist, path = dtw_path(r.learner_mfcc, native_mfcc)
+                    dtw = round(dist, 4)
+                    waveform_data = {
+                        "learner_mfcc": r.learner_mfcc.tolist(),
+                        "native_mfcc": native_mfcc.tolist(),
+                        "dtw_path": [[int(i), int(j)] for i, j in path],
+                    }
 
             # Stage 4 -> Stage 3 loop: a previously discovered systematic error
             is_systematic = False
@@ -221,6 +255,7 @@ class CAPTSystem:
                 "is_systematic": is_systematic,
                 "text_hint": text_hint,
                 "learner_audio_uri": learner_audio_uri,
+                "waveform_data": waveform_data,
             })
         return phones_out
 
@@ -249,6 +284,7 @@ class CAPTSystem:
             substitution = None
             dtw = None
             audio_clip = None
+            waveform_data = None
 
             if op.op == "match":
                 is_mispr = False
@@ -267,7 +303,13 @@ class CAPTSystem:
                         waveform[rp.start_sample:rp.end_sample], sr=SAMPLE_RATE)
                     native_mfcc = self._native_reference_mfcc(phone)
                     if native_mfcc is not None:
-                        dtw = round(dtw_distance(learner_mfcc, native_mfcc), 4)
+                        dist, path = dtw_path(learner_mfcc, native_mfcc)
+                        dtw = round(dist, 4)
+                        waveform_data = {
+                            "learner_mfcc": learner_mfcc.tolist(),
+                            "native_mfcc": native_mfcc.tolist(),
+                            "dtw_path": [[int(i), int(j)] for i, j in path],
+                        }
                     lo = max(0, rp.start_sample - pad)
                     hi = min(len(waveform), rp.end_sample + pad)
                     audio_clip = waveform[lo:hi]
@@ -302,5 +344,6 @@ class CAPTSystem:
                 "is_systematic": is_systematic,
                 "text_hint": text_hint,
                 "learner_audio_uri": learner_audio_uri,
+                "waveform_data": waveform_data,
             })
         return phones_out

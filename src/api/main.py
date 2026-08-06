@@ -96,6 +96,10 @@ async def analyze(audio: UploadFile = File(...), transcript: str = Form(...),
         "match_confidence": result["match_confidence"],
         "match_warning": result["match_warning"],
         "articulation_rate": result["articulation_rate"],
+        "content_ratio": result["content_ratio"],
+        "content_mismatch": result["content_mismatch"],
+        "unknown_words": result["unknown_words"],
+        "no_speech": result["no_speech"],
     }
 
 

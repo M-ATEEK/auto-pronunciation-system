@@ -1,5 +1,11 @@
 export type DetectorChoice = 'baseline' | 'neural';
 
+export interface WaveformData {
+  learner_mfcc: number[][];
+  native_mfcc: number[][];
+  dtw_path: number[][];
+}
+
 export interface PhoneVerdict {
   phone: string;
   word: string;
@@ -10,6 +16,7 @@ export interface PhoneVerdict {
   is_systematic: boolean;
   text_hint: string | null;
   learner_audio_uri: string | null;
+  waveform_data: WaveformData | null;
 }
 
 export interface AnalysisResult {
@@ -20,6 +27,10 @@ export interface AnalysisResult {
   match_confidence: number;
   match_warning: boolean;
   articulation_rate: number | null;
+  content_ratio: number | null;
+  content_mismatch: boolean;
+  unknown_words: string[];
+  no_speech: boolean;
 }
 
 export interface DiscoveredRule {

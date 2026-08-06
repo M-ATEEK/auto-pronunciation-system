@@ -31,6 +31,7 @@ import numpy as np
 
 from src.data.aligner import DictionaryAligner, phones_for_text
 from src.features.extractor import N_MFCC, extract_features, extract_mfcc_sequence
+from src.utils.audio_io import trim_silence
 from src.utils.phoneme_constants import ENGLISH_PHONEMES
 
 import soundfile as sf
@@ -87,6 +88,13 @@ def _utterance_mfcc_mean(audio: np.ndarray) -> np.ndarray:
 def _segment_features(audio: np.ndarray, transcript: str, aligner: DictionaryAligner,
                       cmn: bool) -> list[tuple[str, np.ndarray]]:
     """Return [(phone, 17-dim feature vector), …] for one utterance."""
+    # Trim leading/trailing silence before aligning: the aligner splits the
+    # utterance by proportion of total duration, so silence at either end
+    # shifts every phone boundary. Applied identically at inference.
+    audio = trim_silence(audio)
+    if audio.size == 0:
+        return []
+
     segments = aligner.align(audio, SAMPLE_RATE, transcript)
     if not segments:
         return []
@@ -166,8 +174,10 @@ def build_native_exemplars(corpus_dir: str, per_phone: int = 6, max_utterances: 
         if processed >= max_utterances:
             break
         try:
-            audio = _load_audio(flac)
+            audio = trim_silence(_load_audio(flac))
         except Exception:
+            continue
+        if audio.size == 0:
             continue
         for seg in aligner.align(audio, SAMPLE_RATE, text):
             if len(seg.audio) < 160:

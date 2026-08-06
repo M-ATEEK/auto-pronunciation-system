@@ -8,7 +8,12 @@ venv/
 
 models/*.pkl
 models/profiles/
+models/profiles_stale_backup/
 
+# Audio anywhere under data/ (recordings, corpora) stays local.
+data/**/*.webm
+data/**/*.wav
+data/**/*.flac
 data/*.webm
 data/*.wav
 data/librispeech

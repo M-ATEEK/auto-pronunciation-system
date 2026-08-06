@@ -61,37 +61,82 @@ def _strip_stress(phone: str) -> str:
 _ARPABET: frozenset[str] = frozenset(ENGLISH_PHONEMES)
 
 
-def _phones_for_word(word: str) -> list[str]:
-    """Return the ARPABET phoneme list for a word, or a fallback sequence.
+# The CMU dictionary is American. British spellings of otherwise ordinary
+# words are simply absent ("analysed", "organised"), so try the American form
+# before declaring a word unknown. Suffix rules only, longest first.
+_SPELLING_VARIANTS: tuple[tuple[str, str], ...] = (
+    ("isation", "ization"), ("isations", "izations"),
+    ("ysing", "yzing"), ("ising", "izing"),
+    ("ysed", "yzed"), ("ised", "ized"),
+    ("yses", "yzes"), ("ises", "izes"),
+    ("yse", "yze"), ("ise", "ize"),
+    ("ogue", "og"),
+)
 
+
+def _lookup(word: str) -> list[str]:
+    """CMU dictionary lookup, or [] if the word is not in it."""
+    if not _HAS_PRONOUNCING:
+        return []
+    results = _pro.phones_for_word(word)
+    if not results:
+        return []
+    phones = [_strip_stress(p) for p in results[0].split()]
+    return [p for p in phones if p in ENGLISH_PHONEMES]
+
+
+def _phones_for_word(word: str) -> list[str]:
+    """Return the ARPABET phones for a word, or [] if the pronunciation is unknown.
     """
     word = word.strip(".,!?;:'\"")
 
-    # Direct ARPABET symbol — bypass the dictionary entirely.
+    # Direct ARPABET symbol -- bypass the dictionary entirely.
     upper = _STRESS_RE.sub("", word.upper())
     if upper in _ARPABET:
         return [upper]
 
     word = word.lower()
-    if _HAS_PRONOUNCING:
-        results = _pro.phones_for_word(word)
-        if results:
-            phones = [_strip_stress(p) for p in results[0].split()]
-            phones = [p for p in phones if p in ENGLISH_PHONEMES]
+    phones = _lookup(word)
+    if phones:
+        return phones
+
+    # British -> American spelling, e.g. analysed -> analyzed.
+    for british, american in _SPELLING_VARIANTS:
+        if word.endswith(british):
+            phones = _lookup(word[: -len(british)] + american)
             if phones:
                 return phones
-    # fallback is deterministic hash-based sequence for out-of-dictionary words.
-    n = max(len(word) // 2, 1)
-    idx = abs(hash(word)) % len(ENGLISH_PHONEMES)
-    return [ENGLISH_PHONEMES[(idx + i) % len(ENGLISH_PHONEMES)] for i in range(n)]
+
+    # Possessives and simple plurals of known words.
+    for suffix in ("'s", "s"):
+        if len(word) > len(suffix) + 1 and word.endswith(suffix):
+            phones = _lookup(word[: -len(suffix)])
+            if phones:
+                return phones + (["Z"] if suffix else [])
+
+    return []
 
 
 def phones_for_text(transcript: str) -> list[str]:
-    """Return the flat ARPABET phone sequence for a whole transcript."""
+    """Return the flat ARPABET phone sequence for a whole transcript.
+
+    Words with no known pronunciation contribute nothing; use
+    ``unknown_words`` to report them.
+    """
     phones: list[str] = []
     for word in transcript.split():
         phones.extend(_phones_for_word(word))
     return phones
+
+
+def unknown_words(transcript: str) -> list[str]:
+    """Words whose pronunciation could not be determined, in order."""
+    out: list[str] = []
+    for word in transcript.split():
+        cleaned = word.strip(".,!?;:'\"")
+        if cleaned and not _phones_for_word(word):
+            out.append(cleaned)
+    return out
 
 
 class AlignerProtocol(Protocol):

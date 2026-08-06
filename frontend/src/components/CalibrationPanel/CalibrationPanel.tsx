@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import AudioRecorder from '../AudioRecorder/AudioRecorder';
+import ProfileDashboard from '../ProfileDashboard/ProfileDashboard';
 import { calibrate, getProfile } from '../../services/api';
 import { LearnerProfileData } from '../../types';
 
@@ -144,34 +145,7 @@ const CalibrationPanel: React.FC<CalibrationPanelProps> = ({ learnerId }) => {
       {profile && (
         <div className="calibration-results">
           <h3>Learner Profile — {profile.learner_id}</h3>
-          {Object.keys(profile.phone_stats).length === 0 ? (
-            <p className="feedback-placeholder">No analysis history yet.</p>
-          ) : (
-            <table className="phone-results">
-              <thead>
-                <tr>
-                  <th>Phone</th>
-                  <th>Count</th>
-                  <th>Mean DTW</th>
-                  <th>Systematic?</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.entries(profile.phone_stats).map(([phone, stat]) => (
-                  <tr key={phone} className={stat.is_systematic ? 'row-flagged' : 'row-ok'}>
-                    <td>{phone}</td>
-                    <td>{stat.count}</td>
-                    <td>{stat.mean_dtw.toFixed(2)}</td>
-                    <td>
-                      <span className={stat.is_systematic ? 'badge badge-flagged' : 'badge badge-ok'}>
-                        {stat.is_systematic ? 'Yes' : 'No'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <ProfileDashboard profile={profile} />
         </div>
       )}
     </section>

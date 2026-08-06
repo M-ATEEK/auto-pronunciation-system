@@ -15,6 +15,7 @@ import numpy as np
 from src.classification.random_forest import PhonemeRandomForest
 from src.data.aligner import DictionaryAligner
 from src.features.extractor import N_MFCC, extract_features, extract_mfcc_sequence
+from src.utils.audio_io import trim_silence
 
 SAMPLE_RATE = 16_000
 
@@ -61,6 +62,14 @@ class BaselineDetector:
                sr: int = SAMPLE_RATE) -> list[BaselinePhoneResult]:
         """Return per-phone match/mismatch decisions for one utterance."""
         audio = audio.astype(np.float32)
+        # Trim leading/trailing silence before aligning -- the aligner splits
+        # by proportion of total duration, so silence at either end shifts
+        # every phone boundary. Matches the training-time preprocessing in
+        # src/data/librispeech.py.
+        audio = trim_silence(audio)
+        if audio.size == 0:
+            return []
+
         segments = self._aligner.align(audio, sr, transcript)
         if not segments:
             return []

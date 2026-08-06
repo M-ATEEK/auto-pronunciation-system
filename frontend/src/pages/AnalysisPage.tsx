@@ -108,12 +108,32 @@ const AnalysisPage: React.FC = () => {
           {!result && !isLoading && (
             <p className="feedback-placeholder">Record and analyze to see per-sound results here.</p>
           )}
-          {result && (
+          {result && result.no_speech && (
+            <div className="mismatch-banner" role="alert">
+              <strong>⚠ No speech detected in that recording.</strong>{' '}
+              The microphone picked up only silence or background noise. Check your
+              microphone permissions and input level, then record again.
+            </div>
+          )}
+          {result && result.unknown_words.length > 0 && (
+            <div className="mismatch-banner" role="alert">
+              <strong>
+                ⚠ No known pronunciation for:{' '}
+                {result.unknown_words.map((w) => `"${w}"`).join(', ')}.
+              </strong>{' '}
+              {result.unknown_words.length === 1 ? 'That word is' : 'Those words are'} not in
+              the pronunciation dictionary, so {result.unknown_words.length === 1 ? 'it was' : 'they were'}{' '}
+              skipped rather than scored against guessed sounds. Try a different spelling.
+            </div>
+          )}
+          {result && !result.no_speech && (
             <>
               {result.match_warning && (
                 <div className="mismatch-banner" role="alert">
                   <strong>⚠ This recording may not match the sentence.</strong>{' '}
-                  {result.articulation_rate !== null
+                  {result.content_mismatch
+                    ? 'The audio does not sound like this sentence being read. '
+                    : result.articulation_rate !== null
                     ? `The transcript has too many sounds to fit naturally in this recording (${result.articulation_rate} phones/sec). `
                     : 'Only a small fraction of expected sounds were detected. '}
                   Double-check you recorded the right sentence before trusting the feedback below.

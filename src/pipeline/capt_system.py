@@ -19,7 +19,9 @@ from src.feedback.articulation import (
 )
 from src.data.librispeech import build_native_exemplars
 from src.features.extractor import SAMPLE_RATE, extract_mfcc_sequence
-from src.personalization.discovery import NativeReferenceBank, discover_error_patterns, rules_to_dict
+from src.personalization.discovery import (NativeReferenceBank,
+                                            discover_from_recognition,
+                                            rules_to_dict)
 from src.personalization.dtw import dtw_distance
 from src.personalization.profiler import LearnerProfile, ProfileManager
 from src.utils.audio_io import has_speech
@@ -185,8 +187,7 @@ class CAPTSystem:
 
     # -- Stage 4 calibration: discover systematic errors from a few sentences --
     def _collect_phone_observations(self, waveform, transcript: str) -> list[tuple]:
-        """Return [(intended_phone, learner_MFCC_sequence), ...] for one utterance.
-        """
+       
         expected: list[str] = []
         for w in transcript.split():
             w_clean = w.strip(".,!?;:'\"")
@@ -199,11 +200,9 @@ class CAPTSystem:
 
         obs: list[tuple] = []
         for op in ops:
-            if op.op in ("match", "sub") and op.recognized_index is not None:
-                rp = recognized[op.recognized_index]
-                seg = waveform[rp.start_sample:rp.end_sample]
-                if len(seg) >= 160:
-                    obs.append((op.expected, extract_mfcc_sequence(seg, sr=SAMPLE_RATE)))
+            if op.op == "ins" or op.expected_index is None:
+                continue
+            obs.append((op.expected, op.recognized if op.op != "del" else None))
         return obs
 
     def calibrate(self, learner_id: str, sessions: list[tuple]) -> list[dict]:
@@ -216,13 +215,11 @@ class CAPTSystem:
         Returns:
             List of discovered rule dicts (also stored in the learner's profile).
         """
-        bank = self._get_ref_bank()
-
         observations: list[tuple] = []
         for waveform, transcript in sessions:
             observations.extend(self._collect_phone_observations(waveform, transcript))
 
-        rules = discover_error_patterns(observations, bank)
+        rules = discover_from_recognition(observations)
         rules_dict = rules_to_dict(rules)
         profile = self._profile_manager.get_or_create(learner_id)
         profile.set_discovered_rules(rules_dict)

@@ -54,10 +54,13 @@ _SUBSTITUTES: dict[str, list[str]] = {
     "AW": ["AA"], "OY": ["OW"], "HH": ["F"],
 }
 
-_MIN_DEVIANT_COUNT = 2      # deviant occurrences of a phone to call it systematic
-_SUB_DOMINANCE = 0.5        # fraction of deviant occ. sharing one Q -> substitution
-_DEVIANT_RATIO = 1.5        # deviant cluster mean must exceed correct mean by this
-                            # factor, else no genuine error population exists
+_MIN_DEVIANT_COUNT = 2     
+_SUB_DOMINANCE = 0.5       
+
+_DEVIANT_Z = 2.0        
+                          
+_MIN_CLUSTER_SEPARATION = 1.0  
+                          
 
 
 @dataclass
@@ -77,6 +80,7 @@ class NativeReferenceBank:
 
     def __init__(self, exemplars: dict[str, list[np.ndarray]]) -> None:
         self._exemplars = exemplars
+        self._baselines: dict[str, tuple[float, float]] = {}
 
     @classmethod
     def load(cls, path: str) -> "NativeReferenceBank":
@@ -97,6 +101,31 @@ class NativeReferenceBank:
             return None
         s = seq - seq.mean(axis=0, keepdims=True)  # CMN, matching exemplar prep
         return min(dtw_distance(s, ex) for ex in exs)
+
+    def native_baseline(self, phone: str) -> Optional[tuple[float, float]]:
+      
+        exs = self._exemplars.get(phone)
+        if not exs or len(exs) < 2:
+            return None
+        if phone in self._baselines:
+            return self._baselines[phone]
+        pairs = [dtw_distance(exs[i], exs[j])
+                 for i in range(len(exs)) for j in range(i + 1, len(exs))]
+        mean = float(np.mean(pairs))
+        # Spread falls back to a fraction of the mean when only one pair exists,
+        # so a phone with two exemplars still yields a usable scale.
+        spread = float(np.std(pairs)) if len(pairs) > 1 else 0.0
+        spread = max(spread, 0.15 * mean, 1e-6)
+        self._baselines[phone] = (mean, spread)
+        return self._baselines[phone]
+
+    def normalised(self, phone: str, distance: float) -> Optional[float]:
+        """Express ``distance`` in units of ``phone``'s own native variation."""
+        base = self.native_baseline(phone)
+        if base is None:
+            return None
+        mean, spread = base
+        return (distance - mean) / spread
 
 
 def _candidates(phone: str, bank: NativeReferenceBank) -> list[str]:
@@ -130,7 +159,16 @@ def discover_error_patterns(
             if dq is not None and dq < best_d:
                 best_other, best_d = q, dq
         d_best_other = float(best_d) if best_other is not None else d_int
-        feats.append([float(d_int), d_best_other, float(d_int - d_best_other)])
+
+       
+        z_int = bank.normalised(phone, float(d_int))
+        if z_int is None:
+            continue
+        z_other = (bank.normalised(best_other, d_best_other)
+                   if best_other is not None else z_int)
+        if z_other is None:
+            z_other = z_int
+        feats.append([z_int, z_other, z_int - z_other])
         meta.append((phone, best_other))
 
     if not feats:
@@ -170,33 +208,75 @@ def discover_error_patterns(
     return rules
 
 
+_RECOG_MIN_OCCURRENCES = 3   # occurrences of a phone before it can yield a rule
+_RECOG_ERROR_RATE = 0.5      # share of them the recogniser must dispute
+_RECOG_SUB_DOMINANCE = 0.5   # share of disputes naming one phone -> substitution
+
+
+def discover_from_recognition(pairs: list[tuple[str, Optional[str]]]) -> list[ErrorRule]:
+   
+    from src.classification.phoneme_align import is_confusable
+
+    agg: dict[str, dict] = {}
+    for expected, heard in pairs:
+        a = agg.setdefault(expected, {"total": 0, "bad": 0, "heard": {}})
+        a["total"] += 1
+        # A confusable substitute is not an error, matching the detector's own
+        # rule, so the two stages cannot disagree about what counts as wrong.
+        if heard is not None and (heard == expected or is_confusable(expected, heard)):
+            continue
+        a["bad"] += 1
+        if heard is not None:
+            a["heard"][heard] = a["heard"].get(heard, 0) + 1
+
+    rules: list[ErrorRule] = []
+    for phone, a in agg.items():
+        if a["total"] < _RECOG_MIN_OCCURRENCES:
+            continue
+        rate = a["bad"] / a["total"]
+        if rate < _RECOG_ERROR_RATE:
+            continue
+        dominant, count = None, 0
+        for q, c in a["heard"].items():
+            if c > count:
+                dominant, count = q, c
+        is_sub = dominant is not None and count >= _RECOG_SUB_DOMINANCE * a["bad"]
+        rules.append(ErrorRule(
+            phone=phone,
+            type="substitution" if is_sub else "distortion",
+            substituted_with=dominant if is_sub else None,
+            support=int(a["bad"]),
+            confidence=round(rate, 3),
+            mean_dtw=0.0,          # not a DTW method; kept for profile compatibility
+        ))
+    rules.sort(key=lambda r: (-r.support, -r.confidence))
+    return rules
+
+
 def _cluster_deviant(X: np.ndarray) -> np.ndarray:
-    """Return a boolean mask marking the 'deviant' occurrences.
-    """
+  
     n = len(X)
-    d_int = X[:, 0]
-    if np.allclose(d_int, d_int[0]):
+    z_int = X[:, 0]
+    if np.allclose(z_int, z_int[0]):
         return np.zeros(n, dtype=bool)
 
     if n < 4:
-        med = float(np.median(d_int))
-        return d_int > _DEVIANT_RATIO * max(med, 1e-6)
+        return z_int > _DEVIANT_Z
 
     try:
         from sklearn.cluster import KMeans
         Xs = (X - X.mean(axis=0)) / (X.std(axis=0) + 1e-9)
         labels = KMeans(n_clusters=2, n_init=10, random_state=0).fit(Xs).labels_
-        mean0 = d_int[labels == 0].mean() if (labels == 0).any() else -np.inf
-        mean1 = d_int[labels == 1].mean() if (labels == 1).any() else -np.inf
+        mean0 = z_int[labels == 0].mean() if (labels == 0).any() else -np.inf
+        mean1 = z_int[labels == 1].mean() if (labels == 1).any() else -np.inf
         deviant_label = 0 if mean0 > mean1 else 1
-        correct_mean = min(mean0, mean1)
-        deviant_mean = max(mean0, mean1)
-        if correct_mean > 0 and deviant_mean < _DEVIANT_RATIO * correct_mean:
+        correct_mean, deviant_mean = min(mean0, mean1), max(mean0, mean1)
+
+        if deviant_mean - correct_mean < _MIN_CLUSTER_SEPARATION:
             return np.zeros(n, dtype=bool)
-        return labels == deviant_label
+        return (labels == deviant_label) & (z_int > _DEVIANT_Z)
     except Exception:
-        med = float(np.median(d_int))
-        return d_int > _DEVIANT_RATIO * max(med, 1e-6)
+        return z_int > _DEVIANT_Z
 
 
 def rules_to_dict(rules: list[ErrorRule]) -> dict[str, dict]:

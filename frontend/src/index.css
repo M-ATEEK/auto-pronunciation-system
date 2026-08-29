@@ -432,3 +432,11 @@ body {
   line-height: 1.7;
   color: #2d3748;
 }
+
+.calibration-note,
+.profile-dashboard-note {
+  font-size: 12.5px;
+  color: #718096;
+  margin: 4px 0 10px;
+  line-height: 1.5;
+}

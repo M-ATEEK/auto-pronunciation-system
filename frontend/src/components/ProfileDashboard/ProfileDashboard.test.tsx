@@ -30,9 +30,9 @@ describe('ProfileDashboard', () => {
     expect(screen.getByText('/S/')).toBeInTheDocument();
   });
 
-  it('marks systematic phones with a badge', () => {
+  it('marks repeatedly flagged phones with a badge', () => {
     render(<ProfileDashboard profile={sampleProfile} />);
-    expect(screen.getByText('Systematic')).toBeInTheDocument();
+    expect(screen.getByText('Recurring')).toBeInTheDocument();
   });
 
   it('sorts entries by count descending (highest count first)', () => {
@@ -41,8 +41,8 @@ describe('ProfileDashboard', () => {
     expect(phones[0]).toBe('/TH/'); // count 5 > count 2
   });
 
-  it('shows the summary count of tracked sounds', () => {
+  it('summarises how many sounds have been flagged', () => {
     render(<ProfileDashboard profile={sampleProfile} />);
-    expect(screen.getByText(/2 sounds tracked/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 sounds flagged across past analyses/i)).toBeInTheDocument();
   });
 });

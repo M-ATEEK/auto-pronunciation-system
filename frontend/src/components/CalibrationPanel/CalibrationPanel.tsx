@@ -102,32 +102,52 @@ const CalibrationPanel: React.FC<CalibrationPanelProps> = ({ learnerId }) => {
 
       {rules && (
         <div className="calibration-results">
-          <h3>Discovered Patterns</h3>
+          <h3>Your systematic error patterns</h3>
+          <p className="calibration-note">
+            Sounds you got wrong repeatedly in the recordings above.
+          </p>
           {Object.keys(rules).length === 0 ? (
-            <p className="feedback-placeholder">No systematic error patterns discovered.</p>
+            <p className="feedback-placeholder">
+              No systematic pattern found nothing was wrong often enough to call a habit.
+            </p>
           ) : (
-            <table className="phone-results">
-              <thead>
-                <tr>
-                  <th>Phone</th>
-                  <th>Type</th>
-                  <th>Substituted With</th>
-                  <th>Support</th>
-                  <th>Confidence</th>
-                </tr>
-              </thead>
-              <tbody>
-                {Object.values(rules).map((r) => (
-                  <tr key={r.phone} className="row-flagged">
-                    <td>{r.phone}</td>
-                    <td>{r.type}</td>
-                    <td>{r.substituted_with ?? '—'}</td>
-                    <td>{r.support}</td>
-                    <td>{r.confidence.toFixed(2)}</td>
+            <>
+              <table className="phone-results">
+                <thead>
+                  <tr>
+                    <th>Sound</th>
+                    <th>What happens</th>
+                    <th>Times wrong</th>
+                    <th>How often</th>
+                    <th>Evidence</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {Object.values(rules).map((r) => (
+                    <tr key={r.phone} className="row-flagged">
+                      <td>/{r.phone}/</td>
+                      <td>
+                        {r.substituted_with
+                          ? `said as /${r.substituted_with}/`
+                          : 'produced unclearly'}
+                      </td>
+                      <td>{r.support}</td>
+                      <td>{Math.round(r.confidence * 100)}% of the time</td>
+                      {/*  */}
+                      <td>
+                        {r.support >= 8 ? 'strong' : r.support >= 4 ? 'moderate' : 'weak'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {Object.values(rules).some((r) => r.support < 4) && (
+                <p className="calibration-note">
+                  Some patterns rest on only a few examples. Record more calibration
+                  sentences to confirm them.
+                </p>
+              )}
+            </>
           )}
         </div>
       )}

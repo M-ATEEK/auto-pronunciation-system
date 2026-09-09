@@ -11,6 +11,7 @@ const shape = (over: Partial<Articulation> = {}): Articulation => ({
   tongue_height: 0.7,
   tongue_tip: 1.0,
   manner: 'fricative',
+  place: 'dental',
   voiced: false,
   tense: false,
   ...over,

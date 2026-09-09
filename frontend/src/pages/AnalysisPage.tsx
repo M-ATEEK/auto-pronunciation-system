@@ -7,7 +7,27 @@ import MouthDiagram from '../components/MouthDiagram/MouthDiagram';
 import { analyzeAudio } from '../services/api';
 import { AnalysisResult, DetectorChoice } from '../types';
 
-const LEARNER_ID = 'learner-001';
+/**
+ * Learner identity for this page load.
+ *
+ * `?learner=P07` pins the identity, so a participant's profile survives a
+ * refresh and accumulates across a study session. With no parameter a fresh
+ * random id is minted per page load, so a casual visitor always starts from an
+ * empty profile and two visitors never share one.
+ *
+ * The id reaches a filename on the server, so it is restricted to characters
+ * that cannot escape a directory. The server sanitises it again regardless.
+ */
+const resolveLearnerId = (): string => {
+  const fromUrl = new URLSearchParams(window.location.search).get('learner');
+  const cleaned = (fromUrl ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+  if (cleaned) return cleaned;
+  const rand =
+    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `learner-${rand}`;
+};
+
+const LEARNER_ID = resolveLearnerId();
 
 const AnalysisPage: React.FC = () => {
   const [transcript, setTranscript] = useState('');
@@ -32,7 +52,7 @@ const AnalysisPage: React.FC = () => {
     setError(null);
 
     try {
-      const analysisResult = await analyzeAudio(audioBlob, transcript, detector);
+      const analysisResult = await analyzeAudio(audioBlob, transcript, detector, LEARNER_ID);
       setResult(analysisResult);
     } catch (err) {
       setError('Failed to analyze pronunciation. Please check your connection and try again.');
@@ -126,21 +146,25 @@ const AnalysisPage: React.FC = () => {
               skipped rather than scored against guessed sounds. Try a different spelling.
             </div>
           )}
-          {result && !result.no_speech && (
+          {/* A recording that may not be the target sentence is scored against the
+              wrong expectation, so the analysis is withheld rather than shown with
+              a caveat the learner might read past. */}
+          {result && !result.no_speech && result.match_warning && (
+            <div className="mismatch-banner" role="alert">
+              <strong>⚠ This recording may not match the sentence.</strong>{' '}
+              {result.content_mismatch
+                ? 'The audio does not sound like this sentence being read. '
+                : result.articulation_rate !== null
+                ? `The transcript has too many sounds to fit naturally in this recording (${result.articulation_rate} phones/sec). `
+                : 'Only a small fraction of expected sounds were detected. '}
+              Pronunciation feedback is not shown for this recording. Check that the
+              sentence matches what you said, then record again.
+            </div>
+          )}
+          {result && !result.no_speech && !result.match_warning && (
             <>
-              {result.match_warning && (
-                <div className="mismatch-banner" role="alert">
-                  <strong>⚠ This recording may not match the sentence.</strong>{' '}
-                  {result.content_mismatch
-                    ? 'The audio does not sound like this sentence being read. '
-                    : result.articulation_rate !== null
-                    ? `The transcript has too many sounds to fit naturally in this recording (${result.articulation_rate} phones/sec). `
-                    : 'Only a small fraction of expected sounds were detected. '}
-                  Double-check you recorded the right sentence before trusting the feedback below.
-                </div>
-              )}
               <p className="feedback-summary">
-                Analysed with <strong>{result.detector === 'neural' ? 'Neural (wav2vec2)' : 'Classical (Random Forest)'}</strong> —{' '}
+                Analysed with <strong>{result.detector === 'neural' ? 'Neural (wav2vec2)' : 'Classical (Random Forest)'}</strong>:{' '}
                 {result.phones.filter((p) => !p.is_mispronounced).length} / {result.phones.length} sounds correct
               </p>
               <table className="phone-results">

@@ -1,0 +1,43 @@
+{
+  "protocol": {
+    "utterances": 80,
+    "items": 5429,
+    "induced_errors": 1728,
+    "perturbation_rate": 1.0,
+    "seed": 7,
+    "held_out_from": 100
+  },
+  "classical": {
+    "n": 5429,
+    "accuracy": 0.702,
+    "precision": 0.5453,
+    "recall": 0.3831,
+    "f1": 0.45,
+    "auc": 0.6673,
+    "tp": 662,
+    "fp": 552,
+    "tn": 3149,
+    "fn": 1066
+  },
+  "neural": {
+    "n": 5429,
+    "accuracy": 0.8926,
+    "precision": 0.7519,
+    "recall": 0.989,
+    "f1": 0.8543,
+    "auc": 0.8914,
+    "tp": 1709,
+    "fp": 564,
+    "tn": 3137,
+    "fn": 19
+  },
+  "mcnemar": {
+    "only_neural_correct": 1533,
+    "only_classical_correct": 498,
+    "p_value": 4.955963127709583e-122
+  },
+  "runtime_seconds": {
+    "classical": 300.4,
+    "neural": 93.5
+  }
+}

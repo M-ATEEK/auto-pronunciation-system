@@ -135,7 +135,7 @@ class TestTargetInstructions:
             assert not any("tip at the ridge" in t for t in describe_target(p))
 
     def test_voicing_is_stated_for_consonants(self):
-        assert any("No voice" in t for t in describe_target("S"))
+        assert any("Do not use your voice" in t for t in describe_target("S"))
         assert any("Use your voice" in t for t in describe_target("Z"))
 
     def test_nasals_are_not_told_to_release_the_closure(self):

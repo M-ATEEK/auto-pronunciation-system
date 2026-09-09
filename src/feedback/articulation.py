@@ -157,7 +157,7 @@ def describe_difference(expected: str, produced: str) -> list[str]:
     d = target.lip_rounding - heard.lip_rounding
     if abs(d) > _MIN_DELTA:
         scored.append((abs(d), "Round your lips more" if d > 0
-                       else "Spread your lips -- don't round them"))
+                       else "Spread your lips instead of rounding them"))
 
     d = target.jaw_openness - heard.jaw_openness
     if abs(d) > _MIN_DELTA:
@@ -182,7 +182,7 @@ def describe_difference(expected: str, produced: str) -> list[str]:
         elif target.tongue_tip >= 0.60:
             tip_advice = "Touch your tongue tip to the ridge behind your upper teeth"
         else:
-            tip_advice = ("Keep your tongue tip down -- it isn't used for this sound")
+            tip_advice = ("Keep your tongue tip down, it is not used for this sound")
         scored.append((abs(d) + 0.5, tip_advice))  # tip errors are highly audible
 
     scored.sort(key=lambda x: -x[0])
@@ -191,9 +191,9 @@ def describe_difference(expected: str, produced: str) -> list[str]:
     # Voicing and manner are categorical, so they are not scored by magnitude;
     # voicing in particular changes the word ("sip" vs "zip") and is listed first.
     if target.voiced != heard.voiced:
-        tips.insert(0, "Use your voice -- your vocal cords should vibrate"
+        tips.insert(0, "Use your voice so your vocal cords vibrate"
                     if target.voiced else
-                    "Don't use your voice -- this sound is whispered")
+                    "Whisper this sound without using your voice")
 
     if (target.manner == VOWEL and heard.manner == VOWEL
             and target.tense != heard.tense):
@@ -219,10 +219,10 @@ _PLACE_ADVICE: dict[str, str] = {
              "the air flow around the sides of your tongue",
     POSTALVEOLAR: "Pull your tongue tip back a little, just behind that ridge",
     PALATAL: "Raise the middle of your tongue towards the roof of your mouth",
-    VELAR: "Raise the BACK of your tongue against the soft palate -- the tip stays down",
+    VELAR: "Raise the BACK of your tongue against the soft palate, keeping the tip down",
     LABIOVELAR: "Round your lips tightly and raise the back of your tongue",
     RHOTIC: "Curl your tongue tip up and back without letting it touch the roof",
-    GLOTTAL: "Just push air out from your throat -- the mouth stays relaxed",
+    GLOTTAL: "Just push air out from your throat, keeping the mouth relaxed",
 }
 
 # /h/ is classed as a fricative, but the friction is at the glottis and there is
@@ -256,24 +256,24 @@ def describe_target(phone: str) -> list[str]:
         if a.lip_rounding >= 0.60:
             tips.append("Round your lips")
         elif a.lip_rounding <= 0.20:
-            tips.append("Spread your lips -- don't round them")
+            tips.append("Spread your lips instead of rounding them")
         tips.append("Hold it long and tense" if a.tense
                     else "Keep it short and relaxed")
     else:
         tips.append(_PLACE_ADVICE.get(a.place, ""))
         if a.place not in _NO_MANNER_ADVICE:
             tips.append(_MANNER_ADVICE.get(a.manner, ""))
-        tips.append("Use your voice -- your vocal cords should vibrate" if a.voiced
-                    else "No voice -- this sound is just air")
+        tips.append("Use your voice so your vocal cords vibrate" if a.voiced
+                    else "Do not use your voice, this sound is just air")
 
     return [t for t in tips if t][:4]
 
 
 _MANNER_ADVICE: dict[str, str] = {
     STOP: "Stop the air completely, then release it in one burst",
-    FRICATIVE: "Let the air hiss through a narrow gap -- don't block it fully",
+    FRICATIVE: "Let the air hiss through a narrow gap without blocking it fully",
     AFFRICATE: "Start by stopping the air, then release it into a hiss",
     NASAL: "Let the air out through your nose, not your mouth",
-    APPROXIMANT: "Let the air flow freely -- don't create friction",
+    APPROXIMANT: "Let the air flow freely without creating friction",
     VOWEL: "Keep the air flowing smoothly with an open mouth",
 }

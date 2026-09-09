@@ -1,0 +1,58 @@
+{
+  "cases": [
+    {
+      "simulated_error": "TH->S",
+      "expected_phone_perturbed": "S",
+      "calibration_utterances": 12,
+      "perturbed_occurrences": 55,
+      "total_observations": 908,
+      "discovered": true,
+      "rules_raised": 2,
+      "false_rules": 0
+    },
+    {
+      "simulated_error": "V->W",
+      "expected_phone_perturbed": "W",
+      "calibration_utterances": 12,
+      "perturbed_occurrences": 43,
+      "total_observations": 908,
+      "discovered": true,
+      "rules_raised": 2,
+      "false_rules": 0
+    },
+    {
+      "simulated_error": "R->L",
+      "expected_phone_perturbed": "L",
+      "calibration_utterances": 12,
+      "perturbed_occurrences": 83,
+      "total_observations": 908,
+      "discovered": true,
+      "rules_raised": 2,
+      "false_rules": 0
+    },
+    {
+      "simulated_error": "Z->S",
+      "expected_phone_perturbed": "S",
+      "calibration_utterances": 12,
+      "perturbed_occurrences": 72,
+      "total_observations": 908,
+      "discovered": false,
+      "rules_raised": 0,
+      "false_rules": 0
+    },
+    {
+      "simulated_error": "IY->IH",
+      "expected_phone_perturbed": "IH",
+      "calibration_utterances": 12,
+      "perturbed_occurrences": 78,
+      "total_observations": 908,
+      "discovered": false,
+      "rules_raised": 0,
+      "false_rules": 0
+    }
+  ],
+  "hit_rate": 0.6,
+  "mean_false_rules": 0.0,
+  "control_rules_raised": 0,
+  "control_utterances": 12
+}

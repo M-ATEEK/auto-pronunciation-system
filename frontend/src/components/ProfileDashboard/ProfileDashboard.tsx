@@ -25,7 +25,7 @@ const ProfileDashboard: React.FC<ProfileDashboardProps> = ({ profile }) => {
   return (
     <div className="profile-dashboard">
       <p className="profile-dashboard-summary">
-        {entries.length} sounds flagged across past analyses — {recurring} recurring
+        {entries.length} sounds flagged across past analyses, {recurring} recurring
       </p>
       <p className="profile-dashboard-note">
         A history of what has been flagged over time. Your discovered error patterns come
@@ -53,7 +53,6 @@ const ProfileDashboard: React.FC<ProfileDashboardProps> = ({ profile }) => {
                 />
               </div>
               <span className="profile-entry-count">{stat.count}</span>
-              <span className="profile-entry-dtw">avg distance {stat.mean_dtw.toFixed(1)}</span>
               {stat.is_systematic && (
                 <span className="badge badge-flagged" aria-label="recurring">Recurring</span>
               )}

@@ -1,0 +1,22 @@
+{
+  "content_guard": {
+    "pairs": 30,
+    "threshold": 0.94,
+    "matched_ratio_mean": 0.7945,
+    "matched_ratio_worst": 0.9349,
+    "mismatched_ratio_mean": 1.0017,
+    "mismatched_ratio_best": 0.936,
+    "false_alarms": 0,
+    "misses": 1,
+    "separation": 0.0011
+  },
+  "classical_content_blindness": {
+    "correct_fraction_matched": 0.8154,
+    "correct_fraction_mismatched": 0.7785,
+    "difference": 0.0369
+  },
+  "speech_presence_guard": {
+    "silence_rejected": true,
+    "quiet_noise_rejected": true
+  }
+}

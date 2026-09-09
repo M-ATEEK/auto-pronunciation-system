@@ -1,0 +1,55 @@
+{
+  "utterances": 40,
+  "identification": {
+    "random_forest": {
+      "top1": 0.134,
+      "top3": 0.3311,
+      "top5": 0.4885,
+      "median_rank": 5,
+      "classes": 37,
+      "chance_top1": 0.027,
+      "n": 2739,
+      "confidence_gated": {
+        "most_confident_50pct": {
+          "top1": 0.1366,
+          "n": 1457
+        },
+        "most_confident_25pct": {
+          "top1": 0.139,
+          "n": 705
+        },
+        "most_confident_5pct": {
+          "top1": 0.087,
+          "n": 138
+        }
+      }
+    },
+    "dtw_templates": {
+      "top1": 0.0525,
+      "top3": 0.1396,
+      "top5": 0.23,
+      "median_rank": 13,
+      "classes": 44,
+      "chance_top1": 0.0227,
+      "n": 2743
+    }
+  },
+  "verification_accuracy_by_utterance_length": {
+    "1-10": {
+      "utterances": 0,
+      "mean_correct_fraction": null
+    },
+    "11-20": {
+      "utterances": 2,
+      "mean_correct_fraction": 0.5972
+    },
+    "21-50": {
+      "utterances": 17,
+      "mean_correct_fraction": 0.847
+    },
+    "51+": {
+      "utterances": 21,
+      "mean_correct_fraction": 0.8393
+    }
+  }
+}

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import TypedDict
 
@@ -87,6 +88,22 @@ class LearnerProfile:
         return profile
 
 
+_UNSAFE_ID_CHARS = re.compile(r"[^A-Za-z0-9_-]")
+_MAX_ID_LENGTH = 64
+
+
+def safe_learner_id(learner_id: str) -> str:
+    """Reduce a client-supplied learner id to something safe as a filename.
+
+    The id arrives from the browser and is used to build a path under the
+    profile directory, so anything outside a conservative whitelist is replaced
+    rather than trusted: an id such as ``../../etc/passwd`` would otherwise
+    write and read outside that directory entirely.
+    """
+    cleaned = _UNSAFE_ID_CHARS.sub("_", (learner_id or "").strip())[:_MAX_ID_LENGTH]
+    return cleaned or "anonymous"
+
+
 class ProfileManager:
     """In-memory store of LearnerProfile objects, with optional directory persistence."""
 
@@ -95,6 +112,7 @@ class ProfileManager:
         self._dir = Path(profile_dir) if profile_dir else None
 
     def get_or_create(self, learner_id: str) -> LearnerProfile:
+        learner_id = safe_learner_id(learner_id)
         if learner_id in self._profiles:
             return self._profiles[learner_id]
         if self._dir is not None:
@@ -110,6 +128,7 @@ class ProfileManager:
     def save(self, learner_id: str) -> None:
         if self._dir is None:
             return
+        learner_id = safe_learner_id(learner_id)
         profile = self._profiles.get(learner_id)
         if profile is None:
             return

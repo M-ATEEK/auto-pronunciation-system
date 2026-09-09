@@ -1,27 +1,21 @@
-"""Text-to-speech reference audio generation for Stage 5 (Feedback).
-
-Produces a native-quality reference pronunciation of the target text so the
-learner can hear exactly how the word/sentence should sound.
-
-The rendered audio is returned both as a float32 waveform (for MFCC/DTW use)
-and as WAV bytes (for direct playback in the browser). Results are cached by
-(text, voice) so repeated requests are instant.
-"""
-
 from __future__ import annotations
 
 import base64
 import hashlib
 import io
+import shutil
 import subprocess
+import sys
 import wave
 from functools import lru_cache
 
 import numpy as np
 
 SAMPLE_RATE = 16_000
-DEFAULT_VOICE = "Samantha"   # clear US-English voice available on macOS
-_SPEAKING_RATE = 150         # words per minute -- slightly slow for learners
+DEFAULT_VOICE = "Samantha" 
+_ESPEAK_VOICE = "en-us"     
+_SPEAKING_RATE = 150        
+_HAS_SAY = sys.platform == "darwin" and shutil.which("say") is not None
 
 
 def _render_aiff(text: str, voice: str, rate: int) -> bytes:
@@ -50,6 +44,20 @@ def _render_aiff(text: str, voice: str, rate: int) -> bytes:
             pass
 
 
+def _render_espeak(text: str, rate: int) -> bytes:
+    proc = subprocess.run(
+        ["espeak-ng", "-v", _ESPEAK_VOICE, "-s", str(rate), "--stdout", text],
+        capture_output=True, timeout=15,
+    )
+    return proc.stdout if proc.returncode == 0 else b""
+
+
+def _render_speech(text: str, voice: str, rate: int) -> bytes:
+    if _HAS_SAY:
+        return _render_aiff(text, voice, rate)
+    return _render_espeak(text, rate)
+
+
 def _aiff_to_wave(raw: bytes) -> np.ndarray:
     """Decode arbitrary `say` output to float32 mono 16 kHz via ffmpeg."""
     proc = subprocess.run(
@@ -68,7 +76,9 @@ def synthesize(text: str, voice: str = DEFAULT_VOICE, rate: int = _SPEAKING_RATE
     text = (text or "").strip()
     if not text:
         return np.zeros(SAMPLE_RATE // 2, dtype=np.float32)
-    raw = _render_aiff(text, voice, rate)
+    raw = _render_speech(text, voice, rate)
+    if not raw:
+        return np.zeros(SAMPLE_RATE // 2, dtype=np.float32)
     return _aiff_to_wave(raw)
 
 

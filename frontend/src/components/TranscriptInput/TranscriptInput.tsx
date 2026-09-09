@@ -51,7 +51,6 @@ const TranscriptInput: React.FC<TranscriptInputProps> = ({
         disabled={disabled}
         placeholder="Type the sentence you will pronounce..."
         rows={3}
-        aria-describedby="transcript-help"
       />
       <div className="listen-row">
         <button
@@ -66,10 +65,6 @@ const TranscriptInput: React.FC<TranscriptInputProps> = ({
         </button>
         {error && <span className="error-message">{error}</span>}
       </div>
-      <p id="transcript-help" className="transcript-help">
-        Enter the exact sentence you are recording so the system can compare your pronunciation.
-        Tap <strong>Listen</strong> to hear how it should sound.
-      </p>
     </div>
   );
 };

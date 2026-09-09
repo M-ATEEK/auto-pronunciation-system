@@ -164,7 +164,7 @@ const CalibrationPanel: React.FC<CalibrationPanelProps> = ({ learnerId }) => {
 
       {profile && (
         <div className="calibration-results">
-          <h3>Learner Profile — {profile.learner_id}</h3>
+          <h3>Learner Profile: {profile.learner_id}</h3>
           <ProfileDashboard profile={profile} />
         </div>
       )}
